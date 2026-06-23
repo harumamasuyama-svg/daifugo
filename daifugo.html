@@ -88,6 +88,11 @@
   .flash-cards .card.joker .joker-emoji { font-size:2em; }
   .flash-label { font-size:2.6em; font-weight:bold; text-shadow:0 0 20px currentColor; letter-spacing:.06em; }
   .flash-sub { font-size:1em; color:#ccc; }
+  /* 階級戦カード（小） */
+  .exc-cards .card { width:30px; height:42px; font-size:.65em; cursor:default; border-radius:4px; }
+  .exc-cards .card:hover { transform:none; }
+  .exc-cards .card.joker .joker-emoji { font-size:1.1em; }
+  .exc-cards .card.joker .joker-label { font-size:.4em; }
 
   /* ボタン */
   .controls { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center; }
@@ -220,12 +225,12 @@
 </div>
 
 <!-- 階級戦オーバーレイ -->
-<div id="exchange-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:300;display:none;align-items:center;justify-content:center;">
-  <div style="background:#1a1a2e;border:2px solid #f0c040;border-radius:16px;padding:28px 32px;max-width:680px;width:95%;text-align:center;box-shadow:0 0 40px rgba(240,192,64,.35);">
-    <div style="font-size:1.8em;margin-bottom:4px;">⚔ 階級戦</div>
-    <div style="color:#aaa;font-size:.85em;margin-bottom:20px;">カードの交換が行われました</div>
-    <div id="exchange-content" style="display:flex;flex-direction:column;gap:14px;"></div>
-    <button onclick="closeExchangeOverlay()" style="margin-top:24px;padding:10px 32px;font-size:1em;background:#f0c040;color:#000;border:none;border-radius:8px;cursor:pointer;font-weight:bold;">確認してゲーム開始 ▶</button>
+<div id="exchange-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:300;display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px 0;">
+  <div style="background:#1a1a2e;border:2px solid #f0c040;border-radius:16px;padding:16px;max-width:680px;width:95%;text-align:center;box-shadow:0 0 40px rgba(240,192,64,.35);margin:auto;">
+    <div style="font-size:1.4em;margin-bottom:2px;">⚔ 階級戦</div>
+    <div style="color:#aaa;font-size:.8em;margin-bottom:12px;">カードの交換が行われました</div>
+    <div id="exchange-content" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <button onclick="closeExchangeOverlay()" style="margin-top:16px;padding:10px 28px;font-size:1em;background:#f0c040;color:#000;border:none;border-radius:8px;cursor:pointer;font-weight:bold;">確認してゲーム開始 ▶</button>
   </div>
 </div>
 
@@ -691,19 +696,23 @@ function showExchangeOverlay(log, callback){
     const gaveHTML=gave.map(c=>cardHTML(c)).join('');
     const gotHTML =got.map(c=>cardHTML(c)).join('');
     const row=document.createElement('div');
-    row.style.cssText='display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.06);border-radius:10px;padding:10px 14px;';
+    row.style.cssText='background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px;text-align:left;';
     row.innerHTML=`
-      <div style="min-width:110px;text-align:left;">
-        <div style="font-size:.75em;color:#f0c040;">${RANK_LABEL[log.indexOf(log.find(x=>x.pi===pi))]||''}</div>
-        <div style="font-weight:bold;">${name}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div>
+          <span style="font-size:.7em;color:#f0c040;margin-right:6px;">${RANK_LABEL[log.indexOf(log.find(x=>x.pi===pi))]||''}</span>
+          <span style="font-weight:bold;font-size:.95em;">${name}</span>
+        </div>
       </div>
-      <div style="flex:1;text-align:left;">
-        <div style="font-size:.72em;color:#f88;margin-bottom:3px;">📤 渡したカード</div>
-        <div style="display:flex;gap:4px;">${gaveHTML}</div>
-      </div>
-      <div style="flex:1;text-align:left;">
-        <div style="font-size:.72em;color:#8f8;margin-bottom:3px;">📥 もらったカード</div>
-        <div style="display:flex;gap:4px;">${gotHTML}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.68em;color:#f88;margin-bottom:3px;">📤 渡した</div>
+          <div class="exc-cards" style="display:flex;gap:3px;">${gaveHTML}</div>
+        </div>
+        <div>
+          <div style="font-size:.68em;color:#8f8;margin-bottom:3px;">📥 もらった</div>
+          <div class="exc-cards" style="display:flex;gap:3px;">${gotHTML}</div>
+        </div>
       </div>`;
     content.appendChild(row);
   }
