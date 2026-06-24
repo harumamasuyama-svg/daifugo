@@ -18,11 +18,11 @@ body{background:#0a0600;display:flex;flex-direction:column;align-items:center;ju
 .ov-btn.sub{background:linear-gradient(135deg,#2a2a2a,#444);border-color:#666;font-size:.9em;padding:10px 28px;}
 .score-hi{font-size:.85em;color:#a07040;}
 #game-ctrl{position:fixed;top:6px;right:6px;display:none;flex-direction:row;gap:6px;z-index:20;}#game-ctrl.show{display:flex;}.ctrl-btn{background:rgba(0,0,0,.65);border:1px solid #5a3a00;color:#e0b060;border-radius:8px;font-size:1.1em;padding:5px 10px;cursor:pointer;font-family:inherit;}.ctrl-btn:hover{background:rgba(80,40,0,.8);color:#f0c040;}#ov-pause{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.82);z-index:15;gap:18px;}#ov-pause.hide{display:none;}
-</style>
+#ov-miss{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.7);z-index:30;pointer-events:none;}#ov-miss.hide{display:none;}#miss-text{font-size:clamp(2.5em,12vw,5em);font-weight:bold;color:#e04030;text-shadow:0 0 30px #e04030,0 0 60px #ff0000;letter-spacing:.2em;animation:miss-in .25s ease;}#miss-sub{font-size:clamp(1em,5vw,2em);color:#f0a040;letter-spacing:.3em;margin-top:8px;}#miss-lives{font-size:1.2em;color:#e04030;margin-top:16px;letter-spacing:.1em;}@keyframes miss-in{from{transform:scale(2);opacity:0;}to{transform:scale(1);opacity:1;}}</style>
 </head>
 <body>
 <canvas id="gc"></canvas>
-<div id="game-ctrl"><button class="ctrl-btn" onclick="togglePause()" id="pause-btn">⏸</button><button class="ctrl-btn" onclick="toggleBGM2()">🎵</button><button class="ctrl-btn" onclick="goHome()">🏠</button></div><div class="overlay hide" id="ov-pause"><div class="ov-title">一 時 停 止</div><button class="ov-btn" onclick="togglePause()">▶ 再開</button><button class="ov-btn sub" onclick="goHome()">🏠 遊楽座へ戻る</button></div>
+<div class="overlay hide" id="ov-miss"><div id="miss-text">落 下</div><div id="miss-sub">- MISS -</div><div id="miss-lives"></div></div><div class="overlay hide" id="ov-pause"><div class="ov-title">一 時 停 止</div><button class="ov-btn" onclick="togglePause()">▶ 再開</button><button class="ov-btn sub" onclick="goHome()">🏠 遊楽座へ戻る</button></div>
 
 
 <div class="overlay" id="ov-title">
@@ -320,10 +320,26 @@ function updateLasers(){
 
 // ===== INPUT =====
 let laserFireCooldown=0;
+
+// HUDボタンのクリック判定
+function handleCtrlClick(px,py){
+  if(gameState!=='playing'&&gameState!=='paused')return false;
+  const btns=[{x:cw-88,id:'p'},{x:cw-56,id:'m'},{x:cw-24,id:'h'}];
+  for(const b of btns){
+    if(px>=b.x-13&&px<=b.x+13&&py>=4&&py<=26){
+      if(b.id==='p')togglePause();
+      if(b.id==='m')toggleBGM2();
+      if(b.id==='h')goHome();
+      return true;
+    }
+  }
+  return false;
+}
 gc.addEventListener('mousemove',e=>{const r=gc.getBoundingClientRect();inputX=e.clientX-r.left;});
 gc.addEventListener('touchstart',e=>{e.preventDefault();const r=gc.getBoundingClientRect();inputX=e.touches[0].clientX-r.left;},{passive:false});
 gc.addEventListener('touchmove',e=>{e.preventDefault();const r=gc.getBoundingClientRect();inputX=e.touches[0].clientX-r.left;},{passive:false});
-gc.addEventListener('touchend',e=>e.preventDefault(),{passive:false});
+gc.addEventListener('click',e=>{const r=gc.getBoundingClientRect();const sx=(e.clientX-r.left)*(cw/r.width);const sy=(e.clientY-r.top)*(ch/r.height);handleCtrlClick(sx,sy);});
+gc.addEventListener('touchend',e=>{e.preventDefault();if(e.changedTouches.length){const r=gc.getBoundingClientRect();const t=e.changedTouches[0];const sx=(t.clientX-r.left)*(cw/r.width);const sy=(t.clientY-r.top)*(ch/r.height);handleCtrlClick(sx,sy);}},{passive:false});
 
 // ===== GAME LOGIC =====
 function startGame(){
@@ -335,7 +351,7 @@ function startGame(){
   document.getElementById('ov-stage-num').textContent='STAGE '+stageNum;
   document.getElementById('ov-stage-name').textContent=STAGE_NAMES[stageNum-1];
   startBGM();
-  document.getElementById('game-ctrl').classList.add('show');document.getElementById('ov-pause').classList.add('hide');paused=false;
+  document.getElementById('ov-pause').classList.add('hide');paused=false;
   if(frameId)cancelAnimationFrame(frameId);
   frameId=requestAnimationFrame(loop);
 }
@@ -353,13 +369,13 @@ function showClear(){
   document.getElementById('clr-score').textContent='スコア: '+score.toLocaleString()+'\nステージ: '+stageNum+' / 30';
   show('ov-clear');
 }
-function showAllClear(){document.getElementById('game-ctrl').classList.remove('show');
+function showAllClear(){
   gameState='allclear';sfxClear();stopBGM();
   if(score>hiScore)hiScore=score;
   document.getElementById('ac-score').textContent='最終スコア: '+score.toLocaleString()+'\nハイスコア: '+hiScore.toLocaleString();
   show('ov-allclear');
 }
-function showGameOver(){document.getElementById('game-ctrl').classList.remove('show');
+function showGameOver(){
   gameState='gameover';sfxGameover();stopBGM();
   if(score>hiScore)hiScore=score;
   document.getElementById('go-score').textContent='スコア: '+score.toLocaleString()+'\nハイスコア: '+hiScore.toLocaleString();
@@ -368,15 +384,20 @@ function showGameOver(){document.getElementById('game-ctrl').classList.remove('s
 }
 function loseLife(){
   lives--;
-  if(lives<=0){showGameOver();}
-  else{
+  if(lives<=0){showGameOver();return;}
+  gameState='miss';
+  document.getElementById('miss-lives').textContent='残り '+'❤'.repeat(lives);
+  document.getElementById('ov-miss').classList.remove('hide');
+  setTimeout(function(){
+    document.getElementById('ov-miss').classList.add('hide');
     combo=0;
-    const spd=BASE_SPD+Math.min(stageNum*0.18,4);
-    const ang=-Math.PI/2+(Math.random()-.5)*0.4;
+    var spd=BASE_SPD+Math.min(stageNum*0.18,4);
+    var ang=-Math.PI/2+(Math.random()-.5)*0.4;
     balls=[makeBall(cw/2,ch*0.65,Math.cos(ang)*spd,Math.sin(ang)*spd)];
     paddle.w=paddle.baseW;
     laserActive=false;laserTimer=0;pierceTimer=0;score2xTimer=0;bigpadTimer=0;
-  }
+    gameState='playing';
+  },1500);
 }
 function show(id){document.getElementById(id).classList.remove('hide');}
 function hide(id){document.getElementById(id).classList.add('hide');}
@@ -384,7 +405,7 @@ function hide(id){document.getElementById(id).classList.add('hide');}
 // ===== UPDATE =====
 let laserFirAuto=0;
 function update(){
-  if(paused)return;
+  if(paused||gameState==='miss')return;
   if(gameState==='stagein'){
     stageOverlayTimer--;
     if(stageOverlayTimer<=0){gameState='playing';hide('ov-stage');}
