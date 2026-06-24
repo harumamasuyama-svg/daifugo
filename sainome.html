@@ -265,6 +265,7 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
 #bgm-btn{width:100%;padding:9px;background:rgba(0,0,0,.3);border:1px solid #4a2a00;color:#806030;border-radius:8px;font-size:.85em;font-family:inherit;cursor:pointer;letter-spacing:.1em;margin-bottom:8px;transition:background .15s;}
 #bgm-btn:hover{background:rgba(80,40,0,.4);color:#e0a050;}
 #bgm-btn.on{color:#f0c040;border-color:#8a6000;background:rgba(60,30,0,.5);}
+#prob-area{display:flex;align-items:center;background:rgba(0,0,0,.4);border:1px solid #5a3a00;border-radius:10px;padding:8px 14px;margin-bottom:10px;gap:8px;}#prob-cho,#prob-han{flex:1;text-align:center;}.prob-label{font-size:.7em;color:#806030;letter-spacing:.1em;}.prob-val{font-size:1.4em;font-weight:bold;}.prob-cho-val{color:#80b0ff;}.prob-han-val{color:#ff8080;}.prob-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:4px;}.prob-fill-cho{height:100%;background:linear-gradient(90deg,#2050a0,#80b0ff);border-radius:3px;transition:width .5s;}.prob-fill-han{height:100%;background:linear-gradient(90deg,#a02020,#ff8080);border-radius:3px;transition:width .5s;}#prob-total{font-size:.65em;color:#604020;text-align:center;white-space:nowrap;}#history-btn{width:100%;padding:9px;background:rgba(0,0,0,.3);border:1px solid #4a2a00;color:#806030;border-radius:8px;font-size:.85em;font-family:inherit;cursor:pointer;letter-spacing:.1em;margin-bottom:8px;transition:background .15s;}#history-btn:hover{background:rgba(80,40,0,.4);color:#e0a050;}#history-modal{display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.85);overflow-y:auto;padding:20px 16px;}#history-modal.show{display:block;}#history-inner{max-width:480px;margin:0 auto;background:rgba(30,12,0,.95);border:1px solid #5a3a00;border-radius:14px;padding:16px;}#history-inner h3{text-align:center;font-size:1.1em;color:#e0b060;letter-spacing:.2em;margin-bottom:12px;border-bottom:1px solid #3a2000;padding-bottom:8px;}#history-list{max-height:60vh;overflow-y:auto;}.h-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(90,58,0,.3);font-size:.85em;}.h-num{width:28px;color:#604020;text-align:right;flex-shrink:0;}.h-dice{width:40px;text-align:center;color:#c0a060;flex-shrink:0;}.h-sum{width:32px;text-align:center;color:#e0c080;flex-shrink:0;}.h-result{flex:1;font-weight:bold;letter-spacing:.1em;}.h-cho{color:#80b0ff;}.h-han{color:#ff8080;}#history-close{display:block;width:100%;margin-top:14px;padding:10px;background:rgba(80,30,0,.6);border:1px solid #7a4a00;color:#e0b060;border-radius:8px;font-size:.9em;font-family:inherit;cursor:pointer;letter-spacing:.1em;}
 </style>
 </head>
 <body>
@@ -283,6 +284,7 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
     <div id="rank-badge"><div id="rank-icon"></div><div><div id="rank-name"></div><div id="rank-pts"></div></div></div>
     <div id="rank-next"></div>
   </div>
+  <div id="prob-area"><div id="prob-cho"><div class="prob-label">丁の出現率</div><div class="prob-val prob-cho-val" id="pval-cho">－</div><div class="prob-bar"><div class="prob-fill-cho" id="pbar-cho" style="width:50%"></div></div></div><div id="prob-total" id="prob-rounds">0回</div><div id="prob-han"><div class="prob-label">半の出現率</div><div class="prob-val prob-han-val" id="pval-han">－</div><div class="prob-bar"><div class="prob-fill-han" id="pbar-han" style="width:50%"></div></div></div></div>
   <div id="money-area"><div id="money-label">所 持 金</div><div id="money-val"></div></div>
   <div id="stats-area">
     <div class="stat-box"><div class="stat-label">勝率</div><div class="stat-val" id="stat-wr">－</div></div>
@@ -307,6 +309,7 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
     <button class="ch-btn" id="btn-han" onclick="selectChoice('han')">半</button>
   </div>
   <button id="btn-start" onclick="startRound()" disabled>勝 負 ！</button>
+  <button id="history-btn" onclick="showHistory()">📜 出現履歴</button>
   <button id="bgm-btn" onclick="toggleBGM()">🎵 BGM ON</button>
   <button id="btn-back" onclick="location.href='index.html'">🏠 遊楽座へ戻る</button>
 </div>
@@ -368,7 +371,7 @@ const PT_WIN={1000:1,5000:3,10000:5};
 
 let money,bet,choice,wins,losses,streak,bestStreak,rankPts,rolling;
 
-function initState(){money=10000;bet=null;choice=null;wins=0;losses=0;streak=0;bestStreak=0;rankPts=0;rolling=false;}
+function initState(){money=10000;bet=null;choice=null;wins=0;losses=0;streak=0;bestStreak=0;rankPts=0;rolling=false;rollHistory=[];updateProb();}
 function getRankIdx(pts){for(let i=RANKS.length-1;i>=0;i--)if(pts>=RANKS[i].minPt)return i;return 0;}
 
 function startGame(){
@@ -763,6 +766,31 @@ function playCinematic(d1,d2,isEven,won,callback){
     requestAnimationFrame(spinLoop);
   },1900);
 }
+// 履歴・確率
+let rollHistory=[];
+function updateProb(){
+  const tot=rollHistory.length;
+  document.getElementById('prob-total').textContent=tot+'回';
+  if(tot===0){document.getElementById('pval-cho').textContent='－';document.getElementById('pval-han').textContent='－';document.getElementById('pbar-cho').style.width='50%';document.getElementById('pbar-han').style.width='50%';return;}
+  const choCnt=rollHistory.filter(r=>r.result==='cho').length;
+  const hanCnt=tot-choCnt;
+  const choP=Math.round(choCnt/tot*100),hanP=100-choP;
+  document.getElementById('pval-cho').textContent=choP+'%';
+  document.getElementById('pval-han').textContent=hanP+'%';
+  document.getElementById('pbar-cho').style.width=choP+'%';
+  document.getElementById('pbar-han').style.width=hanP+'%';
+}
+function showHistory(){
+  const list=document.getElementById('history-list');
+  if(rollHistory.length===0){list.innerHTML='<div style="text-align:center;color:#604020;padding:20px">まだ勝負していません</div>';}
+  else{list.innerHTML=rollHistory.slice().reverse().map((r,i)=>{
+    const n=rollHistory.length-i;
+    const cls=r.result==='cho'?'h-cho':'h-han';
+    const label=r.result==='cho'?'丁':'半';
+    return '<div class="h-row"><div class="h-num">'+n+'.</div><div class="h-dice">'+r.d1+'-'+r.d2+'</div><div class="h-sum">合計'+r.sum+'</div><div class="h-result '+cls+'">'+label+'</div></div>';
+  }).join('');}
+  document.getElementById('history-modal').classList.add('show');
+}
 // BGM
 let bgmCtx=null,bgmOn=false,bgmNextBar=0,bgmTimer=null,bgmMaster=null;
 const BPM=118,BEAT=60/BPM,S8=BEAT/2;
@@ -781,5 +809,6 @@ function startBGM(){if(bgmCtx)return;bgmOn=true;bgmCtx=new(window.AudioContext||
 function stopBGM(){bgmOn=false;if(bgmTimer)clearTimeout(bgmTimer);if(bgmCtx){bgmCtx.close();bgmCtx=null;}}
 function toggleBGM(){const b=document.getElementById('bgm-btn');if(bgmCtx){stopBGM();b.textContent='🎵 BGM ON';b.classList.remove('on');}else{startBGM();b.textContent='🎵 BGM OFF';b.classList.add('on');}}
 </script>
+<div id="history-modal"><div id="history-inner"><h3>📜 出現履歴</h3><div id="history-list"></div><button id="history-close" onclick="document.getElementById('history-modal').classList.remove('show')">閉じる</button></div></div>
 </body>
 </html>
