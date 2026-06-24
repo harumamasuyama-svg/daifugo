@@ -159,11 +159,7 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
 #cin-bowl-wrap.lift{animation:bowl-lift 0.5s cubic-bezier(.3,0,.5,1) forwards;}
 
 /* 3Dサイコロ */
-.cin-die-wrap{
-  position:absolute;
-  transform-style:preserve-3d;
-  width:64px;height:64px;
-}
+.cin-die-wrap{transform-style:preserve-3d;width:64px;height:64px;flex-shrink:0;}
 .cin-die-face{
   position:absolute;width:64px;height:64px;
   background:linear-gradient(135deg,#fefefe,#e0e0e0);
@@ -266,6 +262,9 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
   position:absolute;bottom:20%;
   font-size:1.2em;color:#e0c080;letter-spacing:.2em;opacity:0;
 }
+#bgm-btn{width:100%;padding:9px;background:rgba(0,0,0,.3);border:1px solid #4a2a00;color:#806030;border-radius:8px;font-size:.85em;font-family:inherit;cursor:pointer;letter-spacing:.1em;margin-bottom:8px;transition:background .15s;}
+#bgm-btn:hover{background:rgba(80,40,0,.4);color:#e0a050;}
+#bgm-btn.on{color:#f0c040;border-color:#8a6000;background:rgba(60,30,0,.5);}
 </style>
 </head>
 <body>
@@ -308,6 +307,7 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
     <button class="ch-btn" id="btn-han" onclick="selectChoice('han')">半</button>
   </div>
   <button id="btn-start" onclick="startRound()" disabled>勝 負 ！</button>
+  <button id="bgm-btn" onclick="toggleBGM()">🎵 BGM ON</button>
   <button id="btn-back" onclick="location.href='index.html'">🏠 遊楽座へ戻る</button>
 </div>
 
@@ -376,6 +376,9 @@ function startGame(){
   document.getElementById('title-screen').style.display='none';
   document.getElementById('game-screen').style.display='block';
   resetRound(); renderAll();
+  startBGM();
+  document.getElementById('bgm-btn').textContent='🎵 BGM OFF';
+  document.getElementById('bgm-btn').classList.add('on');
 }
 function resetGame(){document.getElementById('gameover-screen').style.display='none';startGame();}
 
@@ -462,6 +465,7 @@ function showGameOver(){
   document.getElementById('gameover-screen').style.display='flex';
   const tot=wins+losses,wr=tot>0?Math.round(wins/tot*100)+'%':'－';
   const r=RANKS[getRankIdx(rankPts)];
+  stopBGM();
   document.getElementById('go-stats').innerHTML='通算成績: '+wins+'勝 '+losses+'敗（勝率 '+wr+'）<br>最高連勝: '+bestStreak+'連勝<br>最終ランク: '+r.icon+' '+r.name+'（'+rankPts+'pt）';
 }
 
@@ -759,6 +763,23 @@ function playCinematic(d1,d2,isEven,won,callback){
     requestAnimationFrame(spinLoop);
   },1900);
 }
+// BGM
+let bgmCtx=null,bgmOn=false,bgmNextBar=0,bgmTimer=null,bgmMaster=null;
+const BPM=118,BEAT=60/BPM,S8=BEAT/2;
+const NN={D3:146.83,A3:220,D4:293.66,F4:349.23,G4:392,A4:440,C5:523.25,D5:587.33,F5:698.46};
+const SHAM=[[0,NN.D5,.38,.36],[1,NN.A4,.16,.26],[2,NN.D5,.2,.3],[3,NN.F5,.36,.33],[4,NN.D5,.16,.28],[5,NN.C5,.16,.26],[6,NN.A4,.36,.3],[8,NN.G4,.2,.26],[9,NN.A4,.16,.24],[10,NN.C5,.36,.28],[11,NN.A4,.16,.26],[12,NN.D5,.38,.32],[14,NN.A4,.28,.28],[15,NN.G4,.16,.22]];
+const FLTM=[[0,NN.D4,BEAT*1.8,.15],[4,NN.F4,BEAT*1.8,.13],[8,NN.A4,BEAT*1.8,.15],[12,NN.C5,BEAT*1.8,.13]];
+const BASM=[[0,NN.D3,BEAT*4,.2],[8,NN.A3,BEAT*4,.18]];
+const TKB=[0,4,6,8,12,14],HIB=[2,5,10,13];
+function shamNote(f,w,d,v){if(!bgmCtx)return;const o=bgmCtx.createOscillator(),g=bgmCtx.createGain(),fl=bgmCtx.createBiquadFilter();o.type='sawtooth';o.frequency.value=f;fl.type='bandpass';fl.frequency.value=f*2.4;fl.Q.value=1.8;g.gain.setValueAtTime(0,w);g.gain.linearRampToValueAtTime(v,w+.003);g.gain.exponentialRampToValueAtTime(.001,w+d);o.connect(fl);fl.connect(g);g.connect(bgmMaster);o.start(w);o.stop(w+d+.05);}
+function fltNote(f,w,d,v){if(!bgmCtx)return;const o=bgmCtx.createOscillator(),vi=bgmCtx.createOscillator(),vg=bgmCtx.createGain(),g=bgmCtx.createGain();o.type='sine';o.frequency.value=f;vi.type='sine';vi.frequency.value=5.5;vg.gain.value=4;vi.connect(vg);vg.connect(o.frequency);g.gain.setValueAtTime(0,w);g.gain.linearRampToValueAtTime(v,w+.1);g.gain.setValueAtTime(v,w+d-.12);g.gain.linearRampToValueAtTime(0,w+d);o.connect(g);g.connect(bgmMaster);o.start(w);o.stop(w+d+.05);vi.start(w);vi.stop(w+d+.05);}
+function basNote(f,w,d,v){if(!bgmCtx)return;const o=bgmCtx.createOscillator(),g=bgmCtx.createGain();o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,w);g.gain.linearRampToValueAtTime(v,w+.02);g.gain.setValueAtTime(v,w+d-.1);g.gain.linearRampToValueAtTime(0,w+d);o.connect(g);g.connect(bgmMaster);o.start(w);o.stop(w+d+.1);}
+function tkNote(w){if(!bgmCtx)return;const o=bgmCtx.createOscillator(),g=bgmCtx.createGain();o.type='sine';o.frequency.setValueAtTime(75,w);o.frequency.exponentialRampToValueAtTime(32,w+.28);g.gain.setValueAtTime(.45,w);g.gain.exponentialRampToValueAtTime(.001,w+.32);o.connect(g);g.connect(bgmMaster);o.start(w);o.stop(w+.36);}
+function hiNote(w){if(!bgmCtx)return;const buf=bgmCtx.createBuffer(1,Math.floor(bgmCtx.sampleRate*.035),bgmCtx.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*.18));const s=bgmCtx.createBufferSource(),fl=bgmCtx.createBiquadFilter(),g=bgmCtx.createGain();s.buffer=buf;fl.type='highpass';fl.frequency.value=3500;g.gain.setValueAtTime(.15,w);g.gain.exponentialRampToValueAtTime(.001,w+.06);s.connect(fl);fl.connect(g);g.connect(bgmMaster);s.start(w);}
+function scheduleBGMBar(){if(!bgmCtx||!bgmOn)return;const t=bgmNextBar;SHAM.forEach(([i,f,d,v])=>shamNote(f,t+i*S8,d,v));FLTM.forEach(([i,f,d,v])=>fltNote(f,t+i*S8,d,v));BASM.forEach(([i,f,d,v])=>basNote(f,t+i*S8,d,v));TKB.forEach(i=>tkNote(t+i*S8));HIB.forEach(i=>hiNote(t+i*S8));bgmNextBar+=S8*16;bgmTimer=setTimeout(scheduleBGMBar,(bgmNextBar-bgmCtx.currentTime-.35)*1000);}
+function startBGM(){if(bgmCtx)return;bgmOn=true;bgmCtx=new(window.AudioContext||window.webkitAudioContext)();bgmMaster=bgmCtx.createGain();bgmMaster.gain.value=.42;bgmMaster.connect(bgmCtx.destination);bgmNextBar=bgmCtx.currentTime+.1;scheduleBGMBar();}
+function stopBGM(){bgmOn=false;if(bgmTimer)clearTimeout(bgmTimer);if(bgmCtx){bgmCtx.close();bgmCtx=null;}}
+function toggleBGM(){const b=document.getElementById('bgm-btn');if(bgmCtx){stopBGM();b.textContent='🎵 BGM ON';b.classList.remove('on');}else{startBGM();b.textContent='🎵 BGM OFF';b.classList.add('on');}}
 </script>
 </body>
 </html>
