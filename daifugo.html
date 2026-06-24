@@ -239,7 +239,7 @@
       <button id="btn-play"     onclick="playSelected()">出す</button>
       <button id="btn-pass"     onclick="pass()">パス</button>
       <button id="btn-settings" onclick="openSettings()">⚙ ルール設定</button>
-      <button id="btn-bgm" onclick="toggleBGM()">🎵 BGM ON</button>
+      <button id="btn-top" onclick="goToTopMenu()">🏠 トップへ</button><button id="btn-bgm" onclick="toggleBGM()">🎵 BGM ON</button>
       <button id="btn-title" onclick="goToTitle()">🏠 タイトルへ</button>
     </div>
   </div>
@@ -785,6 +785,13 @@ roundNum=0; finished=[]; prevRanks=null; gamesInSet=0;
 function hideTitleScreen(){
   document.getElementById('title-screen').style.display='none';
   startGame();
+}
+
+function goToTopMenu(){
+  if(confirm("トップメニューへ戻りますか？\n（ゲームの進行状況はリセットされます）")){
+    stopBGM();
+    window.location.href="index.html";
+  }
 }
 
 function goToTitle(){
