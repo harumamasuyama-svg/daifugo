@@ -422,7 +422,7 @@ function startRound(){
       money-=bet; losses++; streak=0;
       document.getElementById('result-msg').innerHTML='<span class="lose-msg">【負け】 －'+bet.toLocaleString()+'円…</span>';
       renderAll();
-      if(money<=0){setTimeout(showGameOver,800);return;}
+      if(money<1000){setTimeout(showGameOver,800);return;}
     }
     generateNPCs(); renderParticipants(); rolling=false; updateStartBtn();
   });
