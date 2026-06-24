@@ -424,7 +424,7 @@ function startRound(){
       renderAll();
       if(money<=0){setTimeout(showGameOver,800);return;}
     }
-    rolling=false; updateStartBtn();
+    generateNPCs(); renderParticipants(); rolling=false; updateStartBtn();
   });
 }
 
