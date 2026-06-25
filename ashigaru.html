@@ -1,0 +1,2172 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>最後の足軽</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+#gameCanvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+#pause-btn {position:fixed;top:8px;right:8px;z-index:100;width:40px;height:40px;border-radius:8px;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.4);color:#fff;font-size:20px;cursor:pointer;display:none;align-items:center;justify-content:center;touch-action:manipulation;}
+
+#top-menu-btn {position:fixed;top:8px;left:8px;z-index:100;padding:6px 12px;border-radius:8px;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.35);color:#fff;font-size:13px;font-family:serif;cursor:pointer;touch-action:manipulation;text-decoration:none;display:flex;align-items:center;gap:4px;}
+#title-back-btn {position:fixed;top:8px;left:8px;z-index:100;padding:6px 12px;border-radius:8px;background:rgba(0,0,0,0.55);border:2px solid rgba(255,255,255,0.35);color:#fff;font-size:13px;font-family:serif;cursor:pointer;display:none;touch-action:manipulation;}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<a id="top-menu-btn" href="index.html">🏯 遊楽座へ</a><button id="title-back-btn">🏠 タイトルへ</button><button id="pause-btn">⏸</button>
+<script>
+'use strict';
+
+// ===== 定数定義 =====
+const LOGICAL_W = 400;
+const LOGICAL_H = 600;
+const GROUND_Y = 540;   // 城下町の地面Y
+const PLAYER_Y = GROUND_Y - 24;
+const CANDLE_COUNT = 10;
+const STAGE_TIME = 60;  // 各ステージの持続秒数
+
+// 敵定義（将来的に追加しやすいよう辞書形式）
+const ENEMY_DEFS = {
+  ashigaru: { hp: 1,   speed: 60,  type: 'melee',  score: 10,   color: '#8B4513', w: 18, h: 24, candleDmg: 1 },
+  nobushi:  { hp: 4,   speed: 40,  type: 'melee',  score: 40,   color: '#4B0082', w: 20, h: 28, candleDmg: 1 },
+  yumihei:  { hp: 2,   speed: 35,  type: 'ranged', score: 30,   color: '#006400', w: 18, h: 24, candleDmg: 1, fireRate: 1.5 },
+  kijo:     { hp: 8,   speed: 90,  type: 'charge', score: 80,   color: '#8B0000', w: 28, h: 32, candleDmg: 2 },
+  taisho:   { hp: 100, speed: 25,  type: 'boss',   score: 1000, color: '#FFD700', w: 40, h: 48, candleDmg: 1 },
+};
+
+// ステージ定義（将来的に追加しやすいよう配列形式）
+const STAGES = [
+  { name:'ステージ1 田んぼ', bg:'#228B22', waves:[
+    {t:0,  type:'ashigaru', count:3},
+    {t:10, type:'ashigaru', count:5},
+    {t:25, type:'nobushi',  count:2},
+    {t:40, type:'ashigaru', count:4},
+    {t:30, type:'taisho',   count:1},
+  ]},
+  { name:'ステージ2 街道', bg:'#8B7355', waves:[
+    {t:0,  type:'ashigaru', count:4},
+    {t:8,  type:'yumihei',  count:2},
+    {t:20, type:'nobushi',  count:3},
+    {t:35, type:'yumihei',  count:3},
+    {t:30, type:'taisho',   count:1},
+  ]},
+  { name:'ステージ3 山城', bg:'#556B2F', waves:[
+    {t:0,  type:'ashigaru', count:3},
+    {t:5,  type:'yumihei',  count:2},
+    {t:15, type:'kijo',     count:1},
+    {t:25, type:'nobushi',  count:4},
+    {t:40, type:'kijo',     count:2},
+    {t:30, type:'taisho',   count:1},
+  ]},
+  { name:'ステージ4 夜の寺', bg:'#1a1a2e', waves:[
+    {t:0,  type:'ashigaru', count:6},
+    {t:5,  type:'yumihei',  count:3},
+    {t:10, type:'kijo',     count:2},
+    {t:20, type:'nobushi',  count:5},
+    {t:30, type:'kijo',     count:3},
+    {t:30, type:'taisho',   count:1},
+  ]},
+  { name:'ステージ5 本丸', bg:'#2d0000', waves:[
+    {t:0,  type:'kijo',     count:2},
+    {t:5,  type:'yumihei',  count:4},
+    {t:10, type:'nobushi',  count:4},
+    {t:20, type:'ashigaru', count:8},
+    {t:30, type:'kijo',     count:4},
+    {t:40, type:'nobushi',  count:6},
+    {t:30, type:'taisho',   count:1},
+  ]},
+];
+
+// アイテム定義（将来的に追加しやすいよう辞書形式）
+const ITEM_DEFS = {
+  takeyari: { name:'竹槍', color:'#8B4513', duration: 10 },
+  sake:     { name:'酒',   color:'#FF6347', duration: 10 },
+  dango:    { name:'団子', color:'#FFB6C1', duration: 0  },
+  kayaku:   { name:'火薬壺', color:'#FF4500', duration: 0  },
+};
+
+// ===== ユーティリティ =====
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+
+// ===== AudioManager =====
+// Web Audio APIで全サウンドを生成する
+class AudioManager {
+  constructor() {
+    this.ctx = null;
+    this.bgmNodes = [];
+    this.bgmPlaying = false;
+    this.masterGain = null;
+  }
+
+  // AudioContextを初期化（ユーザー操作後に呼ぶ必要あり）
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.masterGain = this.ctx.createGain();
+    this.masterGain.gain.value = 0.5;
+    this.masterGain.connect(this.ctx.destination);
+  }
+
+  // 短いオシレーターを鳴らす汎用ヘルパー
+  _tone(freq, type, duration, gainVal, startTime, envAttack, envDecay, detune) {
+    if (!this.ctx) return;
+    const g = this.ctx.createGain();
+    g.connect(this.masterGain);
+    const osc = this.ctx.createOscillator();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, startTime);
+    if (detune) osc.detune.setValueAtTime(detune, startTime);
+    osc.connect(g);
+    const now = startTime;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(gainVal, now + (envAttack || 0.01));
+    g.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+  }
+
+  // 斧投擲: sweep down whoosh
+  playThrow() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const g = this.ctx.createGain();
+    g.connect(this.masterGain);
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.3, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  // ガード成功: 金属的なclang
+  playGuard() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    [800, 1200, 1600, 2000].forEach((f, i) => {
+      this._tone(f, 'triangle', 0.4, 0.2, now + i * 0.01, 0.005, 0.3);
+    });
+  }
+
+  // 矢: swoosh
+  playArrow() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const g = this.ctx.createGain();
+    g.connect(this.masterGain);
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.linearRampToValueAtTime(800, now + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.2);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.15, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  // 雷: 低音rumble + 高音crack
+  playThunder() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    // rumble
+    const bufSize = this.ctx.sampleRate * 0.8;
+    const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.8;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 200;
+    src.connect(filter);
+    const g = this.ctx.createGain();
+    filter.connect(g);
+    g.connect(this.masterGain);
+    g.gain.setValueAtTime(1, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    src.start(now);
+    // crack
+    this._tone(440, 'square', 0.1, 0.5, now, 0.001, 0.08);
+    this._tone(880, 'square', 0.05, 0.4, now + 0.01, 0.001, 0.04);
+  }
+
+  // 敵撃破: thud
+  playHit() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const g = this.ctx.createGain();
+    g.connect(this.masterGain);
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.12);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.5, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  }
+
+  // アイテム取得: 明るいchime
+  playItem() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => {
+      this._tone(f, 'sine', 0.3, 0.2, now + i * 0.06, 0.01, 0.25);
+    });
+  }
+
+  // ロウソク消灯: droopサウンド
+  playCandle() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const g = this.ctx.createGain();
+    g.connect(this.masterGain);
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now + 0.5);
+    osc.connect(g);
+    g.gain.setValueAtTime(0.3, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.55);
+  }
+
+  // 拍手音（ステージクリア）
+  playApplause() {
+    if (!this.ctx) return;
+    const duration = 2;
+    const bufSize = this.ctx.sampleRate * duration;
+    const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) {
+      // 周期的なバースト
+      const t = i / this.ctx.sampleRate;
+      const burst = Math.sin(t * 8) > 0.3 ? 1 : 0;
+      data[i] = (Math.random() * 2 - 1) * 0.3 * burst;
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const g = this.ctx.createGain();
+    src.connect(g);
+    g.connect(this.masterGain);
+    g.gain.setValueAtTime(0.5, this.ctx.currentTime);
+    src.start(this.ctx.currentTime);
+  }
+
+  // BGM: 和風リズム + メロディ
+  startBGM() {
+    if (!this.ctx || this.bgmPlaying) return;
+    this.bgmPlaying = true;
+    this._scheduleBGM();
+  }
+
+  stopBGM() {
+    this.bgmPlaying = false;
+    this.bgmNodes.forEach(n => { try { n.stop(); } catch(e){} });
+    this.bgmNodes = [];
+  }
+
+  _scheduleBGM() {
+    if (!this.bgmPlaying || !this.ctx) return;
+    const bpm = 140;
+    const beat = 60 / bpm;
+    const barLen = beat * 4;   // 4拍子
+    const bars = 4;            // 4小節でループ
+    const loopLen = barLen * bars;
+    const now = this.ctx.currentTime + 0.05;
+
+    // Dマイナー音階 (D3=146.83, E3=164.81, F3=174.61, G3=196, A3=220, Bb3=233.08, C4=261.63, D4=293.66)
+    const scale = [146.83, 164.81, 174.61, 196, 220, 233.08, 261.63, 293.66];
+
+    // --- 和太鼓 (低音パーカッション) ---
+    const drumPattern = [0, 2, 4, 6]; // 4拍それぞれのbeat位置
+    for (let bar = 0; bar < bars; bar++) {
+      drumPattern.forEach(step => {
+        const t = now + bar * barLen + step * beat * 0.5;
+        // kick
+        const g = this.ctx.createGain();
+        g.connect(this.masterGain);
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(80, t);
+        osc.frequency.exponentialRampToValueAtTime(30, t + 0.15);
+        osc.connect(g);
+        g.gain.setValueAtTime(0.6, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc.start(t);
+        osc.stop(t + 0.25);
+        this.bgmNodes.push(osc);
+        // snare on beats 2 & 4
+        if (step === 2 || step === 6) {
+          const sg = this.ctx.createGain();
+          sg.connect(this.masterGain);
+          const bufSize = Math.floor(this.ctx.sampleRate * 0.1);
+          const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+          const data = buf.getChannelData(0);
+          for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+          const src2 = this.ctx.createBufferSource();
+          src2.buffer = buf;
+          src2.connect(sg);
+          sg.gain.setValueAtTime(0.2, t);
+          sg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+          src2.start(t);
+          this.bgmNodes.push(src2);
+        }
+      });
+    }
+
+    // --- 篠笛メロディ (高音flute) ---
+    // Dマイナーの簡単なメロディパターン
+    const melody = [5, 4, 3, 5, 6, 5, 4, 3, 5, 7, 6, 5, 4, 5, 3, 4];
+    melody.forEach((si, i) => {
+      const t = now + i * beat * 0.5;
+      if (t > now + loopLen) return;
+      const freq = scale[si % scale.length];
+      const mg = this.ctx.createGain();
+      mg.connect(this.masterGain);
+      const mo = this.ctx.createOscillator();
+      mo.type = 'sine';
+      mo.frequency.setValueAtTime(freq * 2, t); // 1オクターブ上
+      // ビブラート
+      const vib = this.ctx.createOscillator();
+      vib.frequency.value = 6;
+      const vibGain = this.ctx.createGain();
+      vibGain.gain.value = 4;
+      vib.connect(vibGain);
+      vibGain.connect(mo.frequency);
+      vib.start(t);
+      vib.stop(t + beat * 0.45);
+      this.bgmNodes.push(vib);
+      mo.connect(mg);
+      mg.gain.setValueAtTime(0, t);
+      mg.gain.linearRampToValueAtTime(0.12, t + 0.02);
+      mg.gain.setValueAtTime(0.12, t + beat * 0.35);
+      mg.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.48);
+      mo.start(t);
+      mo.stop(t + beat * 0.5);
+      this.bgmNodes.push(mo);
+    });
+
+    // --- 三味線 (鋸波) ---
+    const shamisen = [0, 0, 3, 0, 4, 3, 0, 0, 5, 4, 3, 0, 2, 3, 0, 0];
+    shamisen.forEach((si, i) => {
+      const t = now + i * beat * 0.5;
+      if (t > now + loopLen) return;
+      const freq = scale[si % scale.length];
+      const sg = this.ctx.createGain();
+      sg.connect(this.masterGain);
+      const so = this.ctx.createOscillator();
+      so.type = 'sawtooth';
+      so.frequency.value = freq * 1.5;
+      // フィルターでまろやかに
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.value = 800;
+      so.connect(filt);
+      filt.connect(sg);
+      sg.gain.setValueAtTime(0, t);
+      sg.gain.linearRampToValueAtTime(0.08, t + 0.01);
+      sg.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.3);
+      so.start(t);
+      so.stop(t + beat * 0.35);
+      this.bgmNodes.push(so);
+    });
+
+    // ループ: loopLen後に再スケジュール
+    const loopTimeout = setTimeout(() => {
+      this.bgmNodes = this.bgmNodes.filter(n => {
+        try { return n.context && n.context.currentTime < n.context.currentTime + 1; } catch(e) { return false; }
+      });
+      this._scheduleBGM();
+    }, loopLen * 1000 - 50);
+    // タイムアウトIDは停止時に使わないが問題なし（stopBGMで全ノード停止）
+  }
+}
+
+// ===== InputManager =====
+// PC (キーボード) とスマホ (タッチ) の入力を統合管理
+class InputManager {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.left = false;
+    this.right = false;
+    this.shield = false;
+    this.shieldPressCount = 0;    // 雷用の防御連打カウント
+    this.lastShieldTime = 0;
+    this.scale = 1;               // 論理座標→画面座標の倍率
+
+    this._setupKeyboard();
+    this._setupTouch();
+  }
+
+  setScale(s) { this.scale = s; }
+
+  _setupKeyboard() {
+    const keyState = {};
+    window.addEventListener('keydown', e => {
+      if (['ArrowLeft','ArrowRight','KeyA','KeyD','Space'].includes(e.code)) e.preventDefault();
+      if (keyState[e.code]) return; // リピート防止
+      keyState[e.code] = true;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.left = true;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') this.right = true;
+      if (e.code === 'Space') {
+        this.shield = true;
+        this._countShield();
+      }
+      if (e.code === 'Escape') {
+        if (window._game) window._game.togglePause();
+      }
+    });
+    window.addEventListener('keyup', e => {
+      keyState[e.code] = false;
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.left = false;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') this.right = false;
+      if (e.code === 'Space') this.shield = false;
+    });
+  }
+
+  _setupTouch() {
+    const canvas = this.canvas;
+    const touches = {};
+    let shieldTouchId = null;
+
+    const getTouchLogicalX = (touch) => {
+      const rect = canvas.getBoundingClientRect();
+      return (touch.clientX - rect.left) / this.scale;
+    };
+    const getTouchLogicalY = (touch) => {
+      const rect = canvas.getBoundingClientRect();
+      return (touch.clientY - rect.top) / this.scale;
+    };
+
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        const lx = getTouchLogicalX(t);
+        const ly = getTouchLogicalY(t);
+        // 右下の防御ボタン判定 (論理座標で270-400, 500-600)
+        if (lx > 270 && ly > 500) {
+          shieldTouchId = t.identifier;
+          this.shield = true;
+          this._countShield();
+        } else {
+          touches[t.identifier] = lx;
+        }
+      }
+      this._updateMovement(touches);
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        if (t.identifier === shieldTouchId) {
+          shieldTouchId = null;
+          this.shield = false;
+        }
+        delete touches[t.identifier];
+      }
+      this._updateMovement(touches);
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        if (t.identifier !== shieldTouchId) {
+          touches[t.identifier] = getTouchLogicalX(t);
+        }
+      }
+      this._updateMovement(touches);
+    }, { passive: false });
+  }
+
+  _updateMovement(touches) {
+    // 左半分のタッチがあれば左、右半分(270以下)のタッチがあれば右
+    let hasLeft = false, hasRight = false;
+    for (const id in touches) {
+      const lx = touches[id];
+      if (lx < LOGICAL_W * 0.5) hasLeft = true;
+      else hasRight = true;
+    }
+    this.left = hasLeft;
+    this.right = hasRight;
+  }
+
+  _countShield() {
+    const now = performance.now();
+    // 2秒以内の連打のみカウント
+    if (now - this.lastShieldTime > 2000) {
+      this.shieldPressCount = 0;
+    }
+    this.lastShieldTime = now;
+    this.shieldPressCount++;
+  }
+
+  resetShieldCount() {
+    this.shieldPressCount = 0;
+  }
+}
+
+// ===== Particle =====
+// パーティクルエフェクト（桜吹雪、火花、爆発など）
+class Particle {
+  constructor(x, y, vx, vy, color, size, life, gravity, shape) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.color = color;
+    this.size = size;
+    this.life = life;       // 現在残り寿命
+    this.maxLife = life;
+    this.gravity = gravity || 0;
+    this.shape = shape || 'rect'; // 'rect', 'circle', 'spark'
+    this.dead = false;
+  }
+
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vy += this.gravity * dt;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+
+  draw(ctx) {
+    const alpha = Math.max(0, this.life / this.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    if (this.shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ===== パーティクルファクトリ =====
+function spawnSakura(particles, x, y) {
+  // 桜吹雪: ピンクの小さな四角
+  const count = randInt(5, 8);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = rand(40, 120);
+    particles.push(new Particle(
+      x, y,
+      Math.cos(angle) * spd, Math.sin(angle) * spd - rand(20, 60),
+      '#FFB7C5', rand(3, 6), rand(0.6, 1.2), 200, 'rect'
+    ));
+  }
+}
+
+function spawnSparks(particles, x, y) {
+  // ガード火花: 白い放射状
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const spd = rand(80, 200);
+    particles.push(new Particle(
+      x, y,
+      Math.cos(angle) * spd, Math.sin(angle) * spd,
+      '#FFFFFF', rand(2, 4), rand(0.3, 0.5), 50, 'spark'
+    ));
+  }
+}
+
+function spawnExplosion(particles, x, y) {
+  // 爆発: オレンジの円
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = rand(60, 180);
+    particles.push(new Particle(
+      x, y,
+      Math.cos(angle) * spd, Math.sin(angle) * spd,
+      i % 2 === 0 ? '#FF4500' : '#FFD700', rand(4, 10), rand(0.4, 0.8), 80, 'circle'
+    ));
+  }
+}
+
+function spawnFireParticles(particles, x, y) {
+  // 炎上パーティクル（ゲームオーバー）
+  for (let i = 0; i < 6; i++) {
+    particles.push(new Particle(
+      x + rand(-20, 20), y,
+      rand(-20, 20), rand(-80, -30),
+      Math.random() > 0.5 ? '#FF4500' : '#FF8C00', rand(4, 10), rand(0.5, 1.0), -50, 'circle'
+    ));
+  }
+}
+
+// ===== Projectile =====
+// 斧や矢などの飛翔体
+class Projectile {
+  constructor(x, y, vx, vy, color, w, h, damage, owner) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.color = color;
+    this.w = w; this.h = h;
+    this.damage = damage;
+    this.owner = owner; // 'player' or 'enemy'
+    this.dead = false;
+    this.angle = Math.atan2(vy, vx);
+  }
+
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.angle = Math.atan2(this.vy, this.vx);
+    // 画面外で消える
+    if (this.x < -20 || this.x > LOGICAL_W + 20 || this.y < -20 || this.y > LOGICAL_H + 20) {
+      this.dead = true;
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    if (this.owner === 'player') {
+      // 斧の形状
+      ctx.fillStyle = '#A0522D';
+      ctx.fillRect(-this.w / 2, -this.h / 4, this.w * 0.6, this.h / 2);
+      ctx.fillStyle = '#708090';
+      ctx.beginPath();
+      ctx.moveTo(this.w * 0.1, -this.h / 2);
+      ctx.lineTo(this.w * 0.5, 0);
+      ctx.lineTo(this.w * 0.1, this.h / 2);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // 矢
+      ctx.fillStyle = this.color;
+      ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
+      // 矢尻
+      ctx.beginPath();
+      ctx.moveTo(this.w / 2, 0);
+      ctx.lineTo(this.w / 2 - 5, -3);
+      ctx.lineTo(this.w / 2 - 5, 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// ===== Item =====
+// アイテムドロップ（弧を描いて飛ぶ）
+class Item {
+  constructor(x, y, targetX, type) {
+    this.x = x; this.y = y;
+    this.type = type;
+    this.def = ITEM_DEFS[type];
+    this.dead = false;
+    this.collected = false;
+    this.w = 16; this.h = 16;
+
+    // 弧を描く放物線運動
+    const dx = targetX - x;
+    const vy0 = -200;
+    const gravity = 400;
+    const tFly = (-vy0 + Math.sqrt(vy0 * vy0 + 2 * gravity * (GROUND_Y - y - 20))) / gravity;
+    this.vx = dx / Math.max(tFly, 0.1);
+    this.vy = vy0;
+    this.gravity = gravity;
+    this.landed = false;
+    this.groundY = GROUND_Y - 20;
+
+    // 着地後5秒で消える
+    this.blinkTimer = 0;
+    this.blinkDuration = 5;
+    this.visible = true;
+  }
+
+  update(dt) {
+    if (!this.landed) {
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.vy += this.gravity * dt;
+      if (this.y >= this.groundY) {
+        this.y = this.groundY;
+        this.landed = true;
+        this.vx = 0; this.vy = 0;
+      }
+    } else {
+      this.blinkTimer += dt;
+      // 最後の2秒で点滅
+      if (this.blinkTimer > this.blinkDuration - 2) {
+        this.visible = Math.floor(this.blinkTimer * 6) % 2 === 0;
+      }
+      if (this.blinkTimer >= this.blinkDuration) {
+        this.dead = true;
+      }
+    }
+  }
+
+  draw(ctx) {
+    if (!this.visible) return;
+    const def = this.def;
+    ctx.fillStyle = def.color;
+    // アイテムアイコン（小さな四角）
+    ctx.fillRect(this.x - this.w / 2, this.y - this.h, this.w, this.h);
+    // ラベル
+    ctx.fillStyle = '#FFF';
+    ctx.font = '7px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(def.name[0], this.x, this.y - this.h / 2 + 3);
+    // 光るエフェクト
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(this.x - this.w / 2, this.y - this.h, this.w, this.h);
+  }
+
+  // プレイヤーとの衝突判定
+  hits(px, py) {
+    return this.landed && !this.dead &&
+      Math.abs(this.x - px) < this.w && Math.abs(this.y - py) < this.h + 10;
+  }
+}
+
+// ===== Enemy =====
+// 敵基底クラス（種類ごとに挙動を変える）
+class Enemy {
+  constructor(x, type) {
+    this.type = type;
+    const def = ENEMY_DEFS[type];
+    this.x = x;
+    this.y = 30;
+    this.hp = def.hp;
+    this.maxHp = def.hp;
+    this.speed = def.speed;
+    this.color = def.color;
+    this.w = def.w;
+    this.h = def.h;
+    this.score = def.score;
+    this.candleDmg = def.candleDmg || 1;
+    this.enemyType = def.type;
+    this.dead = false;
+    this.reached = false;    // 最下部到達フラグ
+    this.fireTimer = 0;
+    this.fireRate = def.fireRate || 2;
+    this.chargeSpeed = 0;    // kijo用
+    this.isCharging = false;
+    this.hitFlash = 0;       // ヒット時の白フラッシュ
+    this.walkCycle = 0;      // 歩きアニメーション用
+    // bossTaunt: taishoの最初の動きを少し遅くする
+    this.tauntTimer = (type === 'taisho') ? 1.5 : 0;
+  }
+
+  update(dt, playerX, playerY, projectiles, particles) {
+    if (this.dead || this.reached) return;
+
+    // ボスの最初の待機
+    if (this.tauntTimer > 0) {
+      this.tauntTimer -= dt;
+      return;
+    }
+
+    this.hitFlash = Math.max(0, this.hitFlash - dt * 5);
+    this.walkCycle += dt * 6;
+
+    if (this.enemyType === 'charge') {
+      // 鬼女: 一定距離まで近づいたら突撃
+      if (!this.isCharging && this.y > 100) {
+        this.chargeSpeed = Math.min(this.chargeSpeed + dt * 200, this.speed * 3);
+        this.y += this.chargeSpeed * dt;
+      } else if (this.isCharging) {
+        this.y += this.speed * 4 * dt;
+      } else {
+        this.y += this.speed * dt;
+      }
+      // 突撃フラグ: 画面下半分に入ったら突進
+      if (this.y > LOGICAL_H * 0.4 && !this.isCharging) {
+        this.isCharging = true;
+        this.chargeSpeed = this.speed * 2;
+      }
+    } else {
+      this.y += this.speed * dt;
+    }
+
+    // 弓兵は矢を撃つ
+    if (this.enemyType === 'ranged') {
+      this.fireTimer += dt;
+      if (this.fireTimer >= 1 / this.fireRate) {
+        this.fireTimer = 0;
+        // 下方向に矢を撃つ
+        const dx = playerX - this.x;
+        const dy = playerY - this.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const spd = 180;
+        projectiles.push(new Projectile(
+          this.x, this.y + this.h / 2,
+          (dx / len) * spd, (dy / len) * spd,
+          '#90EE90', 12, 3, 1, 'enemy'
+        ));
+      }
+    }
+
+    // ボスは左右に揺れる
+    if (this.type === 'taisho') {
+      this.x += Math.sin(this.walkCycle * 0.3) * 0.5;
+      this.x = clamp(this.x, this.w / 2, LOGICAL_W - this.w / 2);
+    }
+
+    // 地面（城下町）に到達
+    if (this.y + this.h >= GROUND_Y) {
+      this.reached = true;
+      this.dead = true;
+    }
+  }
+
+  // ダメージを受ける
+  takeDamage(dmg, particles) {
+    if (this.dead) return false;
+    this.hp -= dmg;
+    this.hitFlash = 1;
+    if (this.hp <= 0) {
+      this.dead = true;
+      // 桜吹雪パーティクル
+      spawnSakura(particles, this.x, this.y);
+      return true; // 撃破
+    }
+    return false;
+  }
+
+  draw(ctx) {
+    if (this.dead) return;
+    const bob = Math.sin(this.walkCycle) * 2; // 上下にぼこぼこ歩く
+
+    ctx.save();
+    ctx.translate(this.x, this.y + bob);
+
+    // ヒット時の白フラッシュ
+    if (this.hitFlash > 0) {
+      ctx.filter = `brightness(${1 + this.hitFlash * 5})`;
+    }
+
+    // 敵の描画（種類ごとに形を変える）
+    this._drawBody(ctx);
+
+    ctx.filter = 'none';
+    ctx.restore();
+
+    // HPバー（nobushi, taishoなど複数HP持ち）
+    if (this.maxHp > 1) {
+      const bw = this.w + 4;
+      const bx = this.x - bw / 2;
+      const by = this.y - 6;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(bx, by, bw, 3);
+      ctx.fillStyle = this.type === 'taisho' ? '#FFD700' : '#FF4444';
+      ctx.fillRect(bx, by, bw * (this.hp / this.maxHp), 3);
+    }
+  }
+
+  _drawBody(ctx) {
+    const w = this.w, h = this.h;
+    // 体
+    ctx.fillStyle = this.color;
+    ctx.fillRect(-w / 2, -h, w, h * 0.7);
+    // 頭
+    ctx.fillStyle = '#FDBCB4';
+    ctx.fillRect(-w / 4, -h - 8, w / 2, 10);
+    // 兜（タイプごとに変える）
+    ctx.fillStyle = this.color;
+    if (this.type === 'taisho') {
+      // 大将: 大きな兜
+      ctx.fillRect(-w / 2 - 4, -h - 14, w + 8, 12);
+      // 飾り
+      ctx.fillStyle = '#FF0000';
+      ctx.fillRect(-w / 4, -h - 22, w / 2, 10);
+    } else if (this.type === 'kijo') {
+      // 鬼女: 角
+      ctx.fillStyle = '#FF0000';
+      ctx.fillRect(-w / 4, -h - 18, 4, 12);
+      ctx.fillRect(w / 4 - 4, -h - 18, 4, 12);
+    } else {
+      ctx.fillRect(-w / 4, -h - 12, w / 2, 6);
+    }
+    // 脚（アニメーション）
+    ctx.fillStyle = this.color;
+    const legOff = Math.sin(this.walkCycle) * 4;
+    ctx.fillRect(-w / 4, -h * 0.3, w / 4, h * 0.3 + legOff);
+    ctx.fillRect(0, -h * 0.3, w / 4, h * 0.3 - legOff);
+    // 武器
+    if (this.type === 'yumihei') {
+      // 弓
+      ctx.strokeStyle = '#8B4513';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(w / 2, -h / 2, h / 4, -Math.PI / 2, Math.PI / 2);
+      ctx.stroke();
+    } else {
+      // 槍
+      ctx.strokeStyle = '#C0C0C0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w / 2, -h);
+      ctx.lineTo(w / 2 + 5, -h - 10);
+      ctx.stroke();
+    }
+  }
+}
+
+// ===== Player =====
+// プレイヤークラス
+class Player {
+  constructor() {
+    this.x = LOGICAL_W / 2;
+    this.y = PLAYER_Y;
+    this.w = 22;
+    this.h = 30;
+    this.speed = LOGICAL_W * 0.5; // 画面幅の50%/秒
+    this.shield = false;
+    this.fireRate = 3;       // 発/秒
+    this.fireTimer = 0;
+    this.multiShot = false;  // 竹槍アイテム効果
+    this.multiShotTimer = 0;
+    this.fastFire = false;   // 酒アイテム効果
+    this.fastFireTimer = 0;
+    this.knockback = 0;      // 吹き飛び（kijo突撃時）
+    this.knockbackVx = 0;
+    this.walkCycle = 0;
+    this.shieldFlash = 0;    // ガード成功時のフラッシュ
+    this.invincible = 0;     // 無敵時間（kijo吹き飛び後）
+  }
+
+  update(dt, input) {
+    // アイテム効果タイマー
+    if (this.multiShotTimer > 0) {
+      this.multiShotTimer -= dt;
+      if (this.multiShotTimer <= 0) { this.multiShot = false; this.multiShotTimer = 0; }
+    }
+    if (this.fastFireTimer > 0) {
+      this.fastFireTimer -= dt;
+      if (this.fastFireTimer <= 0) { this.fastFire = false; this.fastFireTimer = 0; }
+    }
+
+    // 無敵タイマー
+    if (this.invincible > 0) this.invincible -= dt;
+
+    // 吹き飛び処理
+    if (this.knockback > 0) {
+      this.x += this.knockbackVx * dt;
+      this.knockback -= dt;
+      this.x = clamp(this.x, this.w / 2, LOGICAL_W - this.w / 2);
+    } else {
+      // 移動
+      if (input.left)  this.x -= this.speed * dt;
+      if (input.right) this.x += this.speed * dt;
+      this.x = clamp(this.x, this.w / 2, LOGICAL_W - this.w / 2);
+    }
+
+    this.shield = input.shield;
+    this.shieldFlash = Math.max(0, this.shieldFlash - dt * 3);
+
+    // 歩きアニメーション
+    if (input.left || input.right) this.walkCycle += dt * 8;
+
+    // 自動投擲タイマー
+    this.fireTimer += dt;
+  }
+
+  // 斧を自動投擲できるか判定
+  canFire() {
+    if (this.shield) return false; // 防御中は攻撃しない
+    const rate = this.fastFire ? this.fireRate * 2 : this.fireRate;
+    if (this.fireTimer >= 1 / rate) {
+      this.fireTimer = 0;
+      return true;
+    }
+    return false;
+  }
+
+  // 斧を生成して返す
+  createProjectiles() {
+    const projs = [];
+    const baseVy = -280;
+    if (this.multiShot) {
+      // 3方向
+      const angles = [-20, 0, 20];
+      angles.forEach(deg => {
+        const rad = (deg * Math.PI) / 180;
+        projs.push(new Projectile(
+          this.x, this.y - this.h,
+          Math.sin(rad) * 200, baseVy,
+          '#C0C0C0', 14, 8, 2, 'player'
+        ));
+      });
+    } else {
+      projs.push(new Projectile(
+        this.x, this.y - this.h,
+        0, baseVy,
+        '#C0C0C0', 14, 8, 2, 'player'
+      ));
+    }
+    return projs;
+  }
+
+  // 騎乗武者に吹き飛ばされる
+  applyKnockback(fromX) {
+    const dir = this.x < fromX ? -1 : 1;
+    this.knockback = 0.4;
+    this.knockbackVx = dir * 300;
+    this.invincible = 1.5;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    const bob = Math.sin(this.walkCycle) * 2;
+
+    // 無敵中は点滅
+    if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) {
+      ctx.globalAlpha = 0.4;
+    }
+
+    // 甲冑の足軽
+    // 脚
+    const legOff = Math.sin(this.walkCycle) * 4;
+    ctx.fillStyle = '#4A4A4A';
+    ctx.fillRect(-this.w / 4, 0, this.w / 4, 10 + legOff);
+    ctx.fillRect(0, 0, this.w / 4, 10 - legOff);
+
+    // 体（胴鎧）
+    ctx.fillStyle = '#2F4F4F';
+    ctx.fillRect(-this.w / 2, -this.h * 0.7, this.w, this.h * 0.7 + bob);
+
+    // 鎧の模様
+    ctx.fillStyle = '#1C3232';
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(-this.w / 2 + 2, -this.h * 0.7 + bob + i * 7 + 2, this.w - 4, 3);
+    }
+
+    // 頭
+    ctx.fillStyle = '#FDBCB4';
+    ctx.fillRect(-this.w / 4, -this.h - bob, this.w / 2, 12);
+
+    // 兜
+    ctx.fillStyle = '#2F4F4F';
+    ctx.fillRect(-this.w / 2 + 2, -this.h - bob - 10, this.w - 4, 12);
+    // 兜の鍬形（飾り）
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(-3, -this.h - bob - 20, 3, 12);
+    ctx.fillRect(1, -this.h - bob - 20, 3, 12);
+
+    // 防御中の盾
+    if (this.shield || this.shieldFlash > 0) {
+      ctx.fillStyle = this.shieldFlash > 0
+        ? `rgba(255,255,255,${this.shieldFlash})`
+        : 'rgba(100,149,237,0.7)';
+      ctx.fillRect(-this.w - 4, -this.h - bob, 10, this.h + 5);
+      ctx.strokeStyle = '#87CEEB';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-this.w - 4, -this.h - bob, 10, this.h + 5);
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
+// ===== Villager =====
+// 住民（演出のみ、ゲーム性能に影響なし）
+class Villager {
+  constructor(idx) {
+    this.idx = idx;
+    this.x = 20 + idx * 28;
+    this.baseX = this.x;
+    this.y = GROUND_Y - 12;
+    this.fleeing = false;
+    this.fleeVx = 0;
+    this.celebrating = false;
+    this.celebrateTimer = 0;
+    this.visible = false; // 最初は非表示
+    this.color = ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8'][idx % 5];
+    this.waveTimer = 0;
+  }
+
+  update(dt) {
+    this.waveTimer += dt;
+    if (this.fleeing) {
+      this.x += this.fleeVx * dt;
+      this.x = clamp(this.x, 5, LOGICAL_W - 5);
+    }
+    if (this.celebrating) {
+      this.celebrateTimer += dt;
+      // 主人公の方向に集まる（中央へ）
+      const target = LOGICAL_W / 2 + (this.idx - 5) * 15;
+      this.x += (target - this.x) * dt * 2;
+    }
+  }
+
+  draw(ctx) {
+    if (!this.visible) return;
+    const bob = this.celebrating ? Math.sin(this.waveTimer * 8) * 5 : 0;
+    ctx.fillStyle = this.color;
+    // 頭
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - 14 + bob, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // 体
+    ctx.fillRect(this.x - 3, this.y - 9 + bob, 6, 8);
+    // 脚
+    const legOff = Math.sin(this.waveTimer * 6) * 2;
+    ctx.fillRect(this.x - 3, this.y - 1 + bob, 2, 5 + legOff);
+    ctx.fillRect(this.x + 1, this.y - 1 + bob, 2, 5 - legOff);
+  }
+
+  startFlee(direction) {
+    this.fleeing = true;
+    this.fleeVx = direction * 80;
+  }
+
+  stopFlee() {
+    this.fleeing = false;
+    this.x = this.baseX;
+  }
+
+  startCelebrate() {
+    this.celebrating = true;
+    this.fleeing = false;
+  }
+}
+
+// ===== StageManager =====
+// ステージ進行管理（ウェーブ生成など）
+class StageManager {
+  constructor() {
+    this.stageIndex = 0;
+    this.timer = 0;
+    this.waveIndex = 0;
+    this.done = false;
+  }
+
+  get currentStage() { return STAGES[this.stageIndex]; }
+
+  reset(stageIndex) {
+    this.stageIndex = stageIndex;
+    this.timer = 0;
+    this.waveIndex = 0;
+    this.done = false;
+  }
+
+  update(dt) {
+    this.timer += dt;
+  }
+
+  // 今の時間に沸くべき敵ウェーブを返す（複数回呼んでも重複しない）
+  popWaves() {
+    const waves = [];
+    const stage = this.currentStage;
+    while (this.waveIndex < stage.waves.length && stage.waves[this.waveIndex].t <= this.timer) {
+      waves.push(stage.waves[this.waveIndex]);
+      this.waveIndex++;
+    }
+    return waves;
+  }
+
+  isTimeUp() { return this.timer >= STAGE_TIME; }
+  isLastStage() { return this.stageIndex >= STAGES.length - 1; }
+}
+
+// ===== Game (メインクラス) =====
+class Game {
+  constructor() {
+    this.canvas = document.getElementById('gameCanvas');
+    this.ctx = this.canvas.getContext('2d');
+    this.audio = new AudioManager();
+    this.input = new InputManager(this.canvas);
+    this.stageMgr = new StageManager();
+
+    // ゲーム状態: 'title' | 'playing' | 'paused' | 'stageclear' | 'gameover' | 'ending'
+    this.state = 'title';
+
+    // ゲームオブジェクト
+    this.player = null;
+    this.enemies = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.items = [];
+    this.villagers = [];
+
+    // UI / ゲームデータ
+    this.candles = CANDLE_COUNT;
+    this.score = 0;
+    this.totalScore = 0;
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.lightningGauge = 0;      // 0-100
+    this.lightningActive = false;
+    this.lightningTimer = 0;
+    this.lightningLines = [];      // 稲妻の描画データ
+
+    // ヒットストップ（ガード成功時）
+    this.hitstop = 0;
+
+    // 演出フラグ
+    this.darkFlash = 0;           // 画面暗転
+    this.whiteFlash = 0;          // 白フラッシュ
+    this.screenShake = 0;         // 画面振動
+    this.stageTimer = STAGE_TIME; // 残り時間表示用
+    this.killCount = 0;           // 倒した敵の数（住民出現用）
+    this.gameoverTimer = 0;
+    this.stageClearTimer = 0;
+    this.titleBlink = 0;
+
+    // スケール
+    this.scale = 1;
+
+    // FPS管理
+    this.lastTime = 0;
+    this.frameCount = 0;
+
+    this._resize();
+    window.addEventListener('resize', () => this._resize());
+
+    // タイトル画面のクリック/タッチでゲーム開始
+    this.canvas.addEventListener('click', () => this._onTitleInteract());
+    this.canvas.addEventListener('touchend', () => this._onTitleInteract(), { passive: true });
+
+    requestAnimationFrame(t => this._loop(t));
+  }
+
+  _resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const scale = Math.min(w / LOGICAL_W, h / LOGICAL_H);
+    this.scale = scale;
+    this.canvas.width = LOGICAL_W * scale;
+    this.canvas.height = LOGICAL_H * scale;
+    this.canvas.style.width = this.canvas.width + 'px';
+    this.canvas.style.height = this.canvas.height + 'px';
+    this.input.setScale(scale);
+  }
+
+  _onTitleInteract() {
+    if (this.state === 'paused') { this.togglePause(); return; }
+    if (this.state === 'title') {
+      this.audio.init();
+      this._startGame(0);
+    } else if (this.state === 'gameover') {
+      this._resetToTitle();
+    } else if (this.state === 'stageclear' && this.stageClearTimer > 2) {
+      this._nextStage();
+    } else if (this.state === 'ending' && this.stageClearTimer > 3) {
+      this._resetToTitle();
+    }
+  }
+
+  _resetToTitle() {
+    this.state = 'title';
+    this.audio.stopBGM();
+    document.getElementById('pause-btn').style.display = 'none';document.getElementById('top-menu-btn').style.display='flex';document.getElementById('title-back-btn').style.display='none';
+  }
+
+  togglePause() {
+    if (this.state === 'playing') { this.state = 'paused'; document.getElementById('pause-btn').textContent = '▶'; }
+    else if (this.state === 'paused') { this.state = 'playing'; this.lastTime = performance.now(); document.getElementById('pause-btn').textContent = '⏸'; }
+  }
+
+  _startGame(stageIndex) {
+    this.stageIndex = stageIndex;
+    this.stageMgr.reset(stageIndex);
+    this.player = new Player();
+    this.enemies = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.items = [];
+    this.villagers = Array.from({length: 10}, (_, i) => new Villager(i));
+    this.candles = CANDLE_COUNT;
+    this.score = 0;
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.lightningGauge = 0;
+    this.lightningActive = false;
+    this.lightningTimer = 0;
+    this.hitstop = 0;
+    this.darkFlash = 0;
+    this.whiteFlash = 0;
+    this.screenShake = 0;
+    this.killCount = 0;
+document.getElementById('pause-btn').style.display='flex';document.getElementById('top-menu-btn').style.display='none';document.getElementById('title-back-btn').style.display='block';
+        this.state = 'playing';
+    this.stageTimer = STAGE_TIME;
+    this.audio.startBGM();
+  }
+
+  _nextStage() {
+    if (this.stageMgr.isLastStage()) {
+      this.state = 'ending';
+      this.stageClearTimer = 0;
+    } else {
+      this.totalScore += this.score;
+      this._startGame(this.stageMgr.stageIndex + 1);
+    }
+  }
+
+  // ===== メインループ =====
+  _loop(time) {
+    requestAnimationFrame(t => this._loop(t));
+    const dt = Math.min((time - this.lastTime) / 1000, 0.05); // 最大50ms
+    this.lastTime = time;
+
+    if (this.state === 'paused') {
+      this._drawPaused();
+      return;
+    }
+    if (this.state === 'playing') {
+      this._update(dt);
+    } else if (this.state === 'title') {
+      this.titleBlink += dt;
+    } else if (this.state === 'gameover') {
+      this._updateGameover(dt);
+    } else if (this.state === 'stageclear' || this.state === 'ending') {
+      this._updateStageClear(dt);
+    }
+
+    this._draw();
+  }
+
+  // ===== 更新処理 =====
+  _update(dt) {
+    // ヒットストップ中は全オブジェクト停止
+    if (this.hitstop > 0) {
+      this.hitstop--;
+      return;
+    }
+
+    this.whiteFlash = Math.max(0, this.whiteFlash - dt * 3);
+    this.darkFlash = Math.max(0, this.darkFlash - dt * 2);
+    this.screenShake = Math.max(0, this.screenShake - dt * 8);
+
+    // 雷演出中の処理
+    if (this.lightningActive) {
+      this.lightningTimer -= dt;
+      if (this.lightningTimer <= 0) {
+        this.lightningActive = false;
+        this.whiteFlash = 1;
+        // 全敵に大ダメージ
+        this.enemies.forEach(e => {
+          if (!e.dead) {
+            e.takeDamage(50, this.particles);
+            // 吹き飛ばし
+            e.y -= rand(30, 80);
+            spawnSakura(this.particles, e.x, e.y);
+          }
+        });
+      }
+      return; // 雷中は更新しない
+    }
+
+    // ステージ進行
+    this.stageMgr.update(dt);
+    this.stageTimer = Math.max(0, STAGE_TIME - this.stageMgr.timer);
+
+    // ウェーブ沸き
+    const waves = this.stageMgr.popWaves();
+    waves.forEach(wave => this._spawnWave(wave));
+
+    // ステージクリア判定
+    if (this.stageMgr.isTimeUp()) {
+      this._stageClear();
+      return;
+    }
+
+    // プレイヤー更新
+    this.player.update(dt, this.input);
+
+    // 斧の自動投擲
+    if (this.player.canFire()) {
+      const projs = this.player.createProjectiles();
+      projs.forEach(p => this.projectiles.push(p));
+      this.audio.playThrow();
+    }
+
+    // 雷ゲージ: 連打チェック
+    if (this.input.shieldPressCount >= 5 && this.lightningGauge >= 100) {
+      this.input.resetShieldCount();
+      this._activateLightning();
+    }
+
+    // コンボタイマー
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) this.combo = 0;
+    }
+
+    // 敵更新
+    this.enemies.forEach(e => {
+      e.update(dt, this.player.x, this.player.y, this.projectiles, this.particles);
+      if (e.reached) {
+        // ロウソク減少
+        this.candles = Math.max(0, this.candles - e.candleDmg);
+        this.audio.playCandle();
+        this.screenShake = 0.3;
+        // 住民逃げ演出
+        this.villagers.forEach(v => {
+          if (v.visible) v.startFlee(Math.random() > 0.5 ? 1 : -1);
+        });
+        setTimeout(() => this.villagers.forEach(v => v.stopFlee()), 2000);
+        if (this.candles <= 0) {
+          this._gameOver();
+        }
+      }
+    });
+
+    // プレイヤー射撃とのヒット判定
+    this.projectiles.forEach(p => {
+      p.update(dt);
+      if (p.owner === 'player') {
+        this.enemies.forEach(e => {
+          if (!e.dead && this._rectHit(p, e)) {
+            p.dead = true;
+            const killed = e.takeDamage(p.damage, this.particles);
+            if (killed) {
+              this._onEnemyKill(e);
+            }
+          }
+        });
+      } else {
+        // 敵の矢 vs プレイヤー
+        if (!this.player.dead && this._hitPlayer(p, this.player)) {
+          p.dead = true;
+          if (this.player.shield) {
+            // ガード成功
+            this._onGuardSuccess(p.x, p.y);
+          }
+          // 矢はガード成功でもプレイヤーへのダメージなし（仕様: ガード中は防ぐ）
+        }
+      }
+    });
+
+    // kijo突撃 vs プレイヤー衝突
+    this.enemies.forEach(e => {
+      if (e.type === 'kijo' && !e.dead && e.isCharging && e.invincible === undefined) {
+        if (Math.abs(e.x - this.player.x) < (e.w + this.player.w) / 2 &&
+            Math.abs(e.y - this.player.y) < (e.h + this.player.h) / 2) {
+          if (this.player.invincible <= 0) {
+            // 防御不可: 吹き飛ばし
+            this.player.applyKnockback(e.x);
+            this.screenShake = 0.4;
+            e.invincible = 1; // クールダウン
+          }
+        }
+      }
+    });
+
+    // 近接敵 vs プレイヤー（防御判定）
+    this.enemies.forEach(e => {
+      if ((e.enemyType === 'melee' || e.enemyType === 'boss') && !e.dead) {
+        if (Math.abs(e.x - this.player.x) < (e.w + this.player.w) / 2 &&
+            Math.abs(e.y - this.player.y) < (e.h + this.player.h) / 2 + 10) {
+          if (this.player.shield) {
+            this._onGuardSuccess(e.x, e.y);
+          }
+        }
+      }
+    });
+
+    // 飛翔体の死亡クリーンアップ
+    this.projectiles = this.projectiles.filter(p => !p.dead);
+    this.enemies = this.enemies.filter(e => !e.dead || e._keepForEffect);
+
+    // アイテム更新
+    this.items.forEach(item => {
+      item.update(dt);
+      if (item.hits(this.player.x, this.player.y)) {
+        this._collectItem(item);
+      }
+    });
+    this.items = this.items.filter(i => !i.dead);
+
+    // パーティクル更新
+    this.particles.forEach(p => p.update(dt));
+    this.particles = this.particles.filter(p => !p.dead);
+
+    // 住民更新
+    this.villagers.forEach(v => v.update(dt));
+
+    // FPS安定化のため死亡敵のクリーンアップ
+    this.enemies = this.enemies.filter(e => !e.dead);
+  }
+
+  _updateGameover(dt) {
+    this.gameoverTimer += dt;
+    // 炎上パーティクル
+    if (Math.random() < 0.3) {
+      spawnFireParticles(this.particles, rand(50, 350), GROUND_Y);
+    }
+    this.particles.forEach(p => p.update(dt));
+    this.particles = this.particles.filter(p => !p.dead);
+  }
+
+  _updateStageClear(dt) {
+    this.stageClearTimer += dt;
+    // 花吹雪
+    if (Math.random() < 0.3) {
+      spawnSakura(this.particles, rand(0, LOGICAL_W), rand(0, LOGICAL_H * 0.5));
+    }
+    this.particles.forEach(p => p.update(dt));
+    this.particles = this.particles.filter(p => !p.dead);
+    // 住民お祝い
+    this.villagers.forEach(v => { v.update(dt); v.celebrating = true; });
+  }
+
+  // ===== ウェーブ生成 =====
+  _spawnWave(wave) {
+    for (let i = 0; i < wave.count; i++) {
+      const x = rand(30, LOGICAL_W - 30);
+      const enemy = new Enemy(x, wave.type);
+      // ウェーブ内でずらして出現させる
+      enemy.y = -(i * 40);
+      this.enemies.push(enemy);
+    }
+  }
+
+  // ===== 敵撃破処理 =====
+  _onEnemyKill(enemy) {
+    this.killCount++;
+    const sc = enemy.score * Math.max(1, this.combo);
+    this.score += sc;
+
+    // コンボ更新
+    this.combo++;
+    this.comboTimer = 3;
+
+    // 雷ゲージ増加
+    this.lightningGauge = Math.min(100, this.lightningGauge + 8);
+
+    this.audio.playHit();
+
+    // 住民を増やす（10体倒すごとに1人出現）
+    const villagerIdx = Math.min(Math.floor(this.killCount / 2), 9);
+    if (villagerIdx < this.villagers.length) {
+      this.villagers[villagerIdx].visible = true;
+    }
+
+    // アイテムをランダムドロップ（30%）
+    if (Math.random() < 0.3) {
+      const types = Object.keys(ITEM_DEFS);
+      const type = types[Math.floor(Math.random() * types.length)];
+      this.items.push(new Item(enemy.x, enemy.y, this.player.x, type));
+    }
+  }
+
+  // ===== ガード成功 =====
+  _onGuardSuccess(x, y) {
+    spawnSparks(this.particles, x, y);
+    this.hitstop = 3; // 3フレーム停止
+    this.player.shieldFlash = 1;
+    this.audio.playGuard();
+    // 雷ゲージ少し増加
+    this.lightningGauge = Math.min(100, this.lightningGauge + 5);
+  }
+
+  // ===== アイテム取得 =====
+  _collectItem(item) {
+    if (item.collected) return;
+    item.collected = true;
+    item.dead = true;
+    this.audio.playItem();
+
+    switch (item.type) {
+      case 'takeyari':
+        this.player.multiShot = true;
+        this.player.multiShotTimer = 10;
+        break;
+      case 'sake':
+        this.player.fastFire = true;
+        this.player.fastFireTimer = 10;
+        break;
+      case 'dango':
+        this.candles = Math.min(CANDLE_COUNT, this.candles + 1);
+        break;
+      case 'kayaku':
+        // 周囲範囲爆発
+        spawnExplosion(this.particles, this.player.x, this.player.y);
+        this.screenShake = 0.5;
+        this.enemies.forEach(e => {
+          if (!e.dead && dist(e.x, e.y, this.player.x, this.player.y) < 80) {
+            e.takeDamage(5, this.particles);
+          }
+        });
+        break;
+    }
+  }
+
+  // ===== 雷発動 =====
+  _activateLightning() {
+    if (this.lightningGauge < 100) return;
+    this.lightningGauge = 0;
+    this.lightningActive = true;
+    this.lightningTimer = 1.2; // 演出時間
+    this.darkFlash = 1;
+    this.audio.playThunder();
+
+    // 稲妻の描画データを生成
+    // 稲妻は _drawLightning 内で毎フレーム生成
+  }
+
+  _drawPaused() {
+    this._draw();
+    const ctx = this.canvas.getContext('2d');
+    const s = this.scale;
+    ctx.save();
+    ctx.scale(s, s);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    ctx.fillStyle = '#FFF';
+    ctx.font = 'bold 36px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('一時停止', LOGICAL_W/2, LOGICAL_H/2 - 20);
+    ctx.font = '18px serif';
+    ctx.fillStyle = '#CCC';
+    ctx.fillText('タップ または ESC で再開', LOGICAL_W/2, LOGICAL_H/2 + 20);
+    ctx.restore();
+  }
+
+  // ===== ゲームオーバー =====
+  _gameOver() {
+    if (this.state !== 'playing') return;
+    this.state = 'gameover';
+    this.gameoverTimer = 0;
+    this.audio.stopBGM();
+    // ロウソク全消灯演出
+    this.candles = 0;
+  }
+
+  // ===== ステージクリア =====
+  _stageClear() {
+    if (this.state !== 'playing') return;
+    this.state = 'stageclear';
+    this.stageClearTimer = 0;
+    this.audio.playApplause();
+    this.villagers.forEach(v => v.startCelebrate());
+  }
+
+  // ===== 衝突判定ヘルパー =====
+  _rectHit(a, b) {
+    return Math.abs(a.x - b.x) < (a.w + b.w) / 2 &&
+           Math.abs(a.y - b.y) < (a.h + b.h) / 2;
+  }
+  _hitPlayer(p, player) {
+    return Math.abs(p.x - player.x) < player.w / 2 + p.w / 2 &&
+           Math.abs(p.y - player.y) < player.h / 2 + p.h / 2;
+  }
+
+  // ===== 描画 =====
+  _draw() {
+    const ctx = this.ctx;
+    const scale = this.scale;
+
+    ctx.save();
+    ctx.scale(scale, scale);
+
+    // 画面振動
+    if (this.screenShake > 0) {
+      const sx = rand(-4, 4) * this.screenShake;
+      const sy = rand(-2, 2) * this.screenShake;
+      ctx.translate(sx, sy);
+    }
+
+    if (this.state === 'title') {
+      this._drawTitle(ctx);
+    } else if (this.state === 'playing') {
+      this._drawGame(ctx);
+    } else if (this.state === 'gameover') {
+      this._drawGame(ctx);
+      this._drawGameover(ctx);
+    } else if (this.state === 'stageclear') {
+      this._drawGame(ctx);
+      this._drawStageClear(ctx);
+    } else if (this.state === 'ending') {
+      this._drawEnding(ctx);
+    }
+
+    ctx.restore();
+  }
+
+  _drawTitle(ctx) {
+    // 背景
+    const grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
+    grad.addColorStop(0, '#0d0d0d');
+    grad.addColorStop(1, '#1a0a00');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+    // 月
+    ctx.fillStyle = 'rgba(255,240,180,0.8)';
+    ctx.beginPath();
+    ctx.arc(LOGICAL_W * 0.75, 80, 40, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 城のシルエット
+    this._drawCastle(ctx, LOGICAL_W / 2, LOGICAL_H * 0.55, true);
+
+    // タイトル文字
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 42px serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#FF4500';
+    ctx.shadowBlur = 20;
+    ctx.fillText('最後の足軽', LOGICAL_W / 2, 120);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#CC8800';
+    ctx.font = '14px serif';
+    ctx.fillText('～ 城を守る最後の戦士 ～', LOGICAL_W / 2, 148);
+
+    // 点滅テキスト
+    if (Math.sin(this.titleBlink * 3) > 0) {
+      ctx.fillStyle = '#FFF';
+      ctx.font = '16px sans-serif';
+      ctx.fillText('タップ / クリックでスタート', LOGICAL_W / 2, LOGICAL_H - 80);
+    }
+
+    // 操作説明
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('PC: A/D or ←/→ 移動  Space: 防御（5連打で雷）', LOGICAL_W / 2, LOGICAL_H - 50);
+    ctx.fillText('スマホ: 左/右半分タッチ移動  右下ボタン: 防御', LOGICAL_W / 2, LOGICAL_H - 32);
+  }
+
+  _drawCastle(ctx, cx, cy, dark) {
+    // 簡易城シルエット
+    const c = dark ? '#1a1a1a' : '#4A3728';
+    ctx.fillStyle = c;
+    // 本体
+    ctx.fillRect(cx - 60, cy - 40, 120, 60);
+    // 屋根
+    ctx.beginPath();
+    ctx.moveTo(cx - 70, cy - 40);
+    ctx.lineTo(cx, cy - 90);
+    ctx.lineTo(cx + 70, cy - 40);
+    ctx.closePath();
+    ctx.fill();
+    // 小屋根
+    ctx.fillRect(cx - 20, cy - 70, 40, 30);
+    ctx.beginPath();
+    ctx.moveTo(cx - 25, cy - 70);
+    ctx.lineTo(cx, cy - 95);
+    ctx.lineTo(cx + 25, cy - 70);
+    ctx.closePath();
+    ctx.fill();
+    // 窓
+    if (!dark) {
+      ctx.fillStyle = '#FFD700';
+      ctx.fillRect(cx - 10, cy - 30, 8, 12);
+      ctx.fillRect(cx + 2, cy - 30, 8, 12);
+    }
+  }
+
+  _drawGame(ctx) {
+    // 背景
+    const stage = this.stageMgr.currentStage;
+    ctx.fillStyle = stage ? stage.bg : '#228B22';
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+    // 雷演出: 暗転
+    if (this.darkFlash > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${this.darkFlash * 0.85})`;
+      ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    }
+
+    // 地面・城下町
+    this._drawTownscape(ctx);
+
+    // 住民
+    this.villagers.forEach(v => v.draw(ctx));
+
+    // アイテム
+    this.items.forEach(i => i.draw(ctx));
+
+    // 敵
+    this.enemies.forEach(e => e.draw(ctx));
+
+    // プレイヤー
+    if (this.player) this.player.draw(ctx);
+
+    // 飛翔体
+    this.projectiles.forEach(p => p.draw(ctx));
+
+    // パーティクル
+    this.particles.forEach(p => p.draw(ctx));
+
+    // 雷の稲妻描画
+    if (this.lightningActive) {
+      this._drawLightning(ctx);
+    }
+
+    // 白フラッシュ
+    if (this.whiteFlash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${this.whiteFlash})`;
+      ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    }
+
+    // UI
+    this._drawUI(ctx);
+  }
+
+  _drawTownscape(ctx) {
+    // 城下町（建物群）
+    ctx.fillStyle = '#4A3728';
+    ctx.fillRect(0, GROUND_Y, LOGICAL_W, LOGICAL_H - GROUND_Y);
+
+    // 城壁
+    ctx.fillStyle = '#3D2B1F';
+    ctx.fillRect(0, GROUND_Y - 8, LOGICAL_W, 10);
+
+    // 建物シルエット
+    const buildings = [
+      {x:10,  w:50, h:45},
+      {x:70,  w:40, h:35},
+      {x:120, w:60, h:55},
+      {x:190, w:35, h:40},
+      {x:240, w:55, h:50},
+      {x:310, w:45, h:38},
+      {x:360, w:40, h:45},
+    ];
+    buildings.forEach(b => {
+      ctx.fillStyle = '#2A1F16';
+      ctx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
+      // 屋根
+      ctx.fillStyle = '#1A1208';
+      ctx.beginPath();
+      ctx.moveTo(b.x - 4, GROUND_Y - b.h);
+      ctx.lineTo(b.x + b.w / 2, GROUND_Y - b.h - 15);
+      ctx.lineTo(b.x + b.w + 4, GROUND_Y - b.h);
+      ctx.closePath();
+      ctx.fill();
+      // 窓の明かり
+      ctx.fillStyle = 'rgba(255,200,50,0.6)';
+      ctx.fillRect(b.x + 8, GROUND_Y - b.h + 10, 8, 10);
+    });
+  }
+
+  _drawUI(ctx) {
+    // 上部バー
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, LOGICAL_W, 36);
+
+    const stage = this.stageMgr.currentStage;
+
+    // ステージ名
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(stage ? stage.name : '', 6, 14);
+
+    // 残り時間（10秒以下で赤点滅）
+    const timeLeft = Math.ceil(this.stageTimer);
+    const timeBlink = timeLeft <= 10 && Math.floor(performance.now() / 300) % 2 === 0;
+    ctx.fillStyle = timeBlink ? '#FF4444' : '#FFFFFF';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(timeLeft + '秒', LOGICAL_W / 2, 22);
+
+    // スコア
+    ctx.fillStyle = '#FFF';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('SCORE: ' + this.score, LOGICAL_W - 6, 14);
+
+    // コンボ
+    if (this.combo >= 2) {
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(this.combo + 'COMBO!', LOGICAL_W - 6, 28);
+    }
+
+    // 雷ゲージ（PC用: 上部に表示）
+    const gx = 6, gy = 24, gw = 80, gh = 8;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(gx, gy, gw, gh);
+    const isMax = this.lightningGauge >= 100;
+    ctx.fillStyle = isMax
+      ? (Math.floor(performance.now() / 150) % 2 === 0 ? '#FFD700' : '#FFA500')
+      : '#6699FF';
+    ctx.fillRect(gx, gy, gw * this.lightningGauge / 100, gh);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(gx, gy, gw, gh);
+    ctx.fillStyle = '#FFF';
+    ctx.font = '7px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('⚡', gx + 1, gy + gh - 1);
+
+    // ロウソク（下部）
+    this._drawCandles(ctx);
+
+    // スマホ用: 防御ボタン（右下）
+    const btnX = 300, btnY = 505, btnW = 90, btnH = 85;
+    ctx.fillStyle = isMax
+      ? 'rgba(255,200,0,0.5)'
+      : 'rgba(50,100,200,0.4)';
+    ctx.beginPath();
+    const r = 12;
+    ctx.moveTo(btnX + r, btnY);
+    ctx.lineTo(btnX + btnW - r, btnY);
+    ctx.quadraticCurveTo(btnX + btnW, btnY, btnX + btnW, btnY + r);
+    ctx.lineTo(btnX + btnW, btnY + btnH - r);
+    ctx.quadraticCurveTo(btnX + btnW, btnY + btnH, btnX + btnW - r, btnY + btnH);
+    ctx.lineTo(btnX + r, btnY + btnH);
+    ctx.quadraticCurveTo(btnX, btnY + btnH, btnX, btnY + btnH - r);
+    ctx.lineTo(btnX, btnY + r);
+    ctx.quadraticCurveTo(btnX, btnY, btnX + r, btnY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = isMax ? '#FFD700' : 'rgba(150,180,255,0.8)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#FFF';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('防御', btnX + btnW / 2, btnY + btnH / 2 - 4);
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = isMax ? '#FFD700' : 'rgba(255,255,255,0.7)';
+    ctx.fillText(isMax ? '5連打で雷！' : '5連打で雷', btnX + btnW / 2, btnY + btnH / 2 + 12);
+
+    // スマホ用: 雷ゲージ（左下）
+    const lgx = 6, lgy = 510, lgw = 60, lgh = 12;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(lgx, lgy, lgw, lgh);
+    ctx.fillStyle = isMax ? '#FFD700' : '#6699FF';
+    ctx.fillRect(lgx, lgy, lgw * this.lightningGauge / 100, lgh);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(lgx, lgy, lgw, lgh);
+    ctx.fillStyle = '#FFF';
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('⚡雷', lgx + 2, lgy + lgh - 2);
+
+    // アイテム効果表示
+    let effectY = 48;
+    if (this.player) {
+      if (this.player.multiShot) {
+        ctx.fillStyle = '#8B4513';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('竹槍: ' + Math.ceil(this.player.multiShotTimer) + 's', 6, effectY);
+        effectY += 12;
+      }
+      if (this.player.fastFire) {
+        ctx.fillStyle = '#FF6347';
+        ctx.fillText('酒: ' + Math.ceil(this.player.fastFireTimer) + 's', 6, effectY);
+      }
+    }
+  }
+
+  _drawCandles(ctx) {
+    const startX = 8, y = LOGICAL_H - 14;
+    const cw = 14, gap = 4;
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < CANDLE_COUNT; i++) {
+      const x = startX + i * (cw + gap);
+      const lit = i < this.candles;
+      // ロウソク本体
+      ctx.fillStyle = lit ? '#F5DEB3' : '#666';
+      ctx.fillRect(x + 4, y - 14, 6, 14);
+      // 芯
+      ctx.fillStyle = '#333';
+      ctx.fillRect(x + 6, y - 18, 2, 5);
+      // 炎
+      if (lit) {
+        // 外炎
+        ctx.fillStyle = 'rgba(255,140,0,0.8)';
+        ctx.beginPath();
+        ctx.ellipse(x + 7, y - 20, 4, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // 内炎
+        ctx.fillStyle = 'rgba(255,255,100,0.9)';
+        ctx.beginPath();
+        ctx.ellipse(x + 7, y - 19, 2, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  _drawLightning(ctx) {
+    // 稲妻を描画
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#AADDFF';
+    ctx.shadowBlur = 15;
+    const lines = this._generateLightningLines(LOGICAL_W / 2, 0, rand(LOGICAL_W * 0.2, LOGICAL_W * 0.8), LOGICAL_H * 0.7, 5);
+    ctx.beginPath();
+    lines.forEach(([x1, y1, x2, y2]) => {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    });
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // 追加の分岐稲妻
+    if (this.enemies.length > 0) {
+      const target = this.enemies[0];
+      const lines2 = this._generateLightningLines(LOGICAL_W / 2, 0, target.x, target.y, 4);
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      lines2.forEach(([x1, y1, x2, y2]) => {
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+      });
+      ctx.stroke();
+    }
+  }
+
+  _generateLightningLines(x1, y1, x2, y2, depth) {
+    if (depth === 0) return [[x1, y1, x2, y2]];
+    const mx = (x1 + x2) / 2 + rand(-25, 25);
+    const my = (y1 + y2) / 2 + rand(-10, 10);
+    return [
+      ...this._generateLightningLines(x1, y1, mx, my, depth - 1),
+      ...this._generateLightningLines(mx, my, x2, y2, depth - 1),
+    ];
+  }
+
+  _drawGameover(ctx) {
+    // 暗転
+    const alpha = Math.min(0.85, this.gameoverTimer * 0.4);
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+    if (this.gameoverTimer > 1) {
+      ctx.fillStyle = '#FF2200';
+      ctx.font = 'bold 36px serif';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#FF0000';
+      ctx.shadowBlur = 30;
+      ctx.fillText('城が落ちた...', LOGICAL_W / 2, LOGICAL_H / 2 - 20);
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#FFD700';
+      ctx.font = '18px sans-serif';
+      ctx.fillText('SCORE: ' + this.score, LOGICAL_W / 2, LOGICAL_H / 2 + 30);
+
+      if (this.gameoverTimer > 2.5) {
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('タップ / クリックでタイトルへ', LOGICAL_W / 2, LOGICAL_H / 2 + 70);
+      }
+    }
+  }
+
+  _drawStageClear(ctx) {
+    const alpha = Math.min(0.7, this.stageClearTimer * 0.5);
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 32px serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#FF8800';
+    ctx.shadowBlur = 20;
+    ctx.fillText('ステージクリア！', LOGICAL_W / 2, LOGICAL_H / 2 - 30);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#FFF';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('SCORE: ' + this.score, LOGICAL_W / 2, LOGICAL_H / 2 + 10);
+
+    if (this.stageClearTimer > 2) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.font = '14px sans-serif';
+      const isLast = this.stageMgr.isLastStage();
+      ctx.fillText(isLast ? 'タップでエンディングへ' : 'タップで次のステージへ', LOGICAL_W / 2, LOGICAL_H / 2 + 50);
+    }
+  }
+
+  _drawEnding(ctx) {
+    const grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
+    grad.addColorStop(0, '#87CEEB');
+    grad.addColorStop(1, '#FFB347');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+
+    // 花吹雪
+    this.particles.forEach(p => p.draw(ctx));
+
+    ctx.fillStyle = '#2F1B0E';
+    ctx.font = 'bold 26px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('最後の足軽、城を守った！', LOGICAL_W / 2, 100);
+
+    ctx.font = '16px serif';
+    ctx.fillText('かくして、城下町に', LOGICAL_W / 2, 160);
+    ctx.fillText('平和が戻ってきた。', LOGICAL_W / 2, 182);
+
+    ctx.fillStyle = '#8B4513';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('TOTAL SCORE: ' + (this.totalScore + this.score), LOGICAL_W / 2, 240);
+
+    // 住民と主人公
+    this._drawEndingScene(ctx);
+
+    if (this.stageClearTimer > 3) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.font = '14px sans-serif';
+      ctx.fillText('タップ / クリックでタイトルへ', LOGICAL_W / 2, LOGICAL_H - 40);
+    }
+  }
+
+  _drawEndingScene(ctx) {
+    // 主人公
+    ctx.save();
+    ctx.translate(LOGICAL_W / 2, LOGICAL_H * 0.65);
+    ctx.fillStyle = '#2F4F4F';
+    ctx.fillRect(-11, -30, 22, 21);
+    ctx.fillStyle = '#FDBCB4';
+    ctx.fillRect(-5, -42, 10, 12);
+    ctx.fillStyle = '#2F4F4F';
+    ctx.fillRect(-9, -50, 18, 10);
+    ctx.restore();
+
+    // 住民がお出迎え
+    const villagerColors = ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8'];
+    for (let i = 0; i < 6; i++) {
+      const vx = LOGICAL_W / 2 + (i - 3) * 30 + 15 + Math.sin(this.stageClearTimer * 3 + i) * 5;
+      const vy = LOGICAL_H * 0.65;
+      ctx.fillStyle = villagerColors[i % 5];
+      ctx.beginPath();
+      ctx.arc(vx, vy - 14, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(vx - 3, vy - 9, 6, 8);
+    }
+  }
+}
+
+// ===== エントリーポイント =====
+window.addEventListener('DOMContentLoaded', () => {
+  new Game();
+});
+</script>
+</body>
+</html>
