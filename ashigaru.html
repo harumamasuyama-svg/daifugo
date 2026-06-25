@@ -55,16 +55,18 @@ const ENEMY_DEFS = {
 const STAGES = [
   { name:'ステージ1 田んぼ', bg:'#228B22', waves:[
     {t:0,  type:'ashigaru', count:3},
-    {t:10, type:'ashigaru', count:5},
-    {t:25, type:'nobushi',  count:2},
-    {t:40, type:'ashigaru', count:4},
+    {t:8,  type:'ashigaru', count:4},
+    {t:15, type:'nobushi',  count:2},
+    {t:22, type:'ashigaru', count:5},
+    {t:28, type:'nobushi',  count:2},
     {t:30, type:'taisho',   count:1},
   ]},
   { name:'ステージ2 街道', bg:'#8B7355', waves:[
     {t:0,  type:'ashigaru', count:4},
-    {t:8,  type:'yumihei',  count:2},
+    {t:7,  type:'yumihei',  count:2},
+    {t:14, type:'ashigaru', count:4},
     {t:20, type:'nobushi',  count:3},
-    {t:35, type:'yumihei',  count:3},
+    {t:26, type:'yumihei',  count:2},
     {t:30, type:'taisho',   count:1},
   ]},
   { name:'ステージ3 山城', bg:'#556B2F', waves:[
@@ -90,7 +92,7 @@ const STAGES = [
     {t:20, type:'ashigaru', count:8},
     {t:30, type:'kijo',     count:4},
     {t:40, type:'nobushi',  count:6},
-    {t:30, type:'taisho',   count:1},
+    {t:30, type:'taisho',   count:3},
   ]},
 ];
 
@@ -838,8 +840,15 @@ class Enemy {
 
     // 地面（城下町）に到達
     if (this.y + this.h >= GROUND_Y) {
-      this.reached = true;
-      this.dead = true;
+      if (this.enemyType === 'taisho' && this.respawnEnabled) {
+        // ボスは上から再登場（HP維持）
+        this.y = -60;
+        this.x = rand(50, LOGICAL_W - 50);
+        this.offscreen = true;
+      } else {
+        this.reached = true;
+        this.dead = true;
+      }
     }
   }
 
@@ -1395,8 +1404,13 @@ document.getElementById('pause-btn').style.display='flex';document.getElementByI
 
     // ステージクリア判定
     if (this.stageMgr.isTimeUp()) {
-      this._stageClear();
-      return;
+      const _si=this.stageMgr.stageIndex;
+      const _ba=this.enemies.some(e=>!e.dead&&e.enemyType==='taisho');
+      if((_si===3||_si===4)&&_ba){
+        // S4,S5はボス全滅まで待機
+      }else{
+        this._stageClear();return;
+      }
     }
 
     // プレイヤー更新
@@ -1445,7 +1459,7 @@ document.getElementById('pause-btn').style.display='flex';document.getElementByI
       p.update(dt);
       if (p.owner === 'player') {
         this.enemies.forEach(e => {
-          if (!e.dead && this._rectHit(p, e)) {
+          if (!e.dead && !e.offscreen && this._rectHit(p, e)) {
             p.dead = true;
             const killed = e.takeDamage(p.damage, this.particles);
             if (killed) {
@@ -1544,14 +1558,18 @@ document.getElementById('pause-btn').style.display='flex';document.getElementByI
     for (let i = 0; i < wave.count; i++) {
       const x = rand(30, LOGICAL_W - 30);
       const enemy = new Enemy(x, wave.type);
-      // ウェーブ内でずらして出現させる
-      enemy.y = -(i * 40);
+      // ウェーブ内でずらして出現させる（画面上端付近から）
+      enemy.y = -30 - (i * 20);
+      enemy.offscreen = true; // 画面内に入るまで当たり判定なし
+      // ステージ4,5のボスは再登場あり
+      if (wave.type === 'taisho' && (this.stageMgr.stageIndex >= 3)) enemy.respawnEnabled = true;
       this.enemies.push(enemy);
     }
   }
 
   // ===== 敵撃破処理 =====
   _onEnemyKill(enemy) {
+    if(enemy.enemyType==='taisho'){this.killCount++;this.score+=enemy.score*Math.max(1,this.combo);this.audio.playHit();setTimeout(()=>this._stageClear(),800);return;}
     this.killCount++;
     const sc = enemy.score * Math.max(1, this.combo);
     this.score += sc;
@@ -2158,7 +2176,11 @@ document.getElementById('pause-btn').style.display='flex';document.getElementByI
 
 // ===== エントリーポイント =====
 window.addEventListener('DOMContentLoaded', () => {
-  new Game();
+  window._game = new Game();
+  var _pb = document.getElementById('pause-btn');
+  if(_pb) _pb.onclick = function(e){e.stopPropagation();if(window._game)window._game.togglePause();};
+  var _tb = document.getElementById('title-back-btn');
+  if(_tb) _tb.onclick = function(e){e.stopPropagation();if(window._game)window._game._resetToTitle();};
 });
 </script>
 </body>
