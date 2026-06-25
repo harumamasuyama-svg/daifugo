@@ -34,8 +34,8 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
 .lose-msg{color:#e04030;text-shadow:0 0 16px #e04030;}
 #bet-area{margin-bottom:12px;}
 #bet-label{font-size:.78em;color:#806030;text-align:center;margin-bottom:6px;letter-spacing:.1em;}
-#bet-btns{display:flex;gap:8px;justify-content:center;}
-.bet-btn{flex:1;background:rgba(80,30,0,.7);border:1px solid #7a4a10;color:#e0b060;border-radius:8px;padding:10px 4px;font-size:.9em;font-family:inherit;cursor:pointer;transition:all .15s;letter-spacing:.05em;}
+#bet-btns{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;}
+.bet-btn{flex:1;background:rgba(80,30,0,.7);border:1px solid #7a4a10;color:#e0b060;border-radius:8px;min-width:calc(33% - 6px);padding:8px 4px;font-size:.88em;font-family:inherit;cursor:pointer;transition:all .15s;letter-spacing:.05em;}
 .bet-btn:hover,.bet-btn.selected{background:rgba(160,80,0,.8);border-color:#f0c040;color:#fff;}
 .bet-btn.selected{box-shadow:0 0 10px rgba(240,160,0,.4);}
 #cho-han-area{display:flex;gap:12px;margin-bottom:14px;}
@@ -303,6 +303,8 @@ body{min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#3a1a00 0%,#1
       <button class="bet-btn" onclick="selectBet(1000)">千円</button>
       <button class="bet-btn" onclick="selectBet(5000)">五千円</button>
       <button class="bet-btn" onclick="selectBet(10000)">一万円</button>
+      <button class="bet-btn" onclick="selectBet(50000)">五万億</button>
+      <button class="bet-btn" onclick="selectBet(100000)">十万億</button>
     </div>
   </div>
   <div id="cho-han-area">
@@ -391,7 +393,7 @@ function selectBet(a){renderParticipants();
   if(a>money){alert('所持金が足りません！');return;}
   bet=a;
   document.querySelectorAll('.bet-btn').forEach(b=>b.classList.remove('selected'));
-  document.querySelectorAll('.bet-btn')[[1000,5000,10000].indexOf(a)].classList.add('selected');
+  document.querySelectorAll('.bet-btn')[[1000,5000,10000,50000,100000].indexOf(a)].classList.add('selected');
   updateStartBtn();
 }
 function selectChoice(c){renderParticipants();
@@ -428,7 +430,7 @@ function startRound(){
   });
 }
 
-const NPC_NAMES=["源氏","平氏","武蔵","小次郎","弁慶","義経","信長","秀吉","家康","龍馬","清盛","道三"];const NPC_BET_OPTS=[1000,1000,3000,5000,5000,10000];let npcBets=[];function generateNPCs(){npcBets=NPC_NAMES.map(function(nm){return{name:nm,choice:Math.random()<0.5?"cho":"han",bet:NPC_BET_OPTS[Math.floor(Math.random()*NPC_BET_OPTS.length)]};});}function calcMult(b,c){var myT=b+npcBets.filter(function(n){return n.choice===c;}).reduce(function(s,n){return s+n.bet;},0);var opT=npcBets.filter(function(n){return n.choice!==c;}).reduce(function(s,n){return s+n.bet;},0);if(opT===0)return 0.1;return Math.max(0.1,Math.round(opT/myT*0.9*10)/10);}function renderParticipants(){var cn=npcBets.filter(function(n){return n.choice==="cho";}).length;var hn=npcBets.length-cn;var ct=npcBets.filter(function(n){return n.choice==="cho";}).reduce(function(s,n){return s+n.bet;},0);var ht=npcBets.filter(function(n){return n.choice==="han";}).reduce(function(s,n){return s+n.bet;},0);document.getElementById("part-cho-info").textContent="丁 "+cn+"人 ¥"+ct.toLocaleString();document.getElementById("part-han-info").textContent="半 "+hn+"人 ¥"+ht.toLocaleString();var rb=bet||1000;document.getElementById("mult-cho").textContent=calcMult(rb,"cho").toFixed(1)+"倍";document.getElementById("mult-han").textContent=calcMult(rb,"han").toFixed(1)+"倍";}function resetRound(){
+const NPC_NAMES=["源氏","平氏","武蔵","小次郎","弁慶","義経","信長","秀吉","家康","龍馬","清盛","道三"];const NPC_BET_OPTS=[1000,3000,5000,5000,10000,10000,50000,100000];let npcBets=[];function generateNPCs(){npcBets=NPC_NAMES.map(function(nm){return{name:nm,choice:Math.random()<0.5?"cho":"han",bet:NPC_BET_OPTS[Math.floor(Math.random()*NPC_BET_OPTS.length)]};});}function calcMult(b,c){var myT=b+npcBets.filter(function(n){return n.choice===c;}).reduce(function(s,n){return s+n.bet;},0);var opT=npcBets.filter(function(n){return n.choice!==c;}).reduce(function(s,n){return s+n.bet;},0);if(opT===0)return 1.0;return Math.max(1.0,Math.round(opT/myT*0.9*10)/10);}function renderParticipants(){var cn=npcBets.filter(function(n){return n.choice==="cho";}).length;var hn=npcBets.length-cn;var ct=npcBets.filter(function(n){return n.choice==="cho";}).reduce(function(s,n){return s+n.bet;},0);var ht=npcBets.filter(function(n){return n.choice==="han";}).reduce(function(s,n){return s+n.bet;},0);document.getElementById("part-cho-info").textContent="丁 "+cn+"人 ¥"+ct.toLocaleString();document.getElementById("part-han-info").textContent="半 "+hn+"人 ¥"+ht.toLocaleString();var rb=bet||1000;document.getElementById("mult-cho").textContent=calcMult(rb,"cho").toFixed(1)+"倍";document.getElementById("mult-han").textContent=calcMult(rb,"han").toFixed(1)+"倍";}function resetRound(){
   bet=null;choice=null;generateNPCs();renderParticipants();
   document.querySelectorAll('.bet-btn').forEach(b=>b.classList.remove('selected'));
   document.getElementById('btn-cho').classList.remove('selected');
