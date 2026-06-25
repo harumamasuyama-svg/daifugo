@@ -970,13 +970,22 @@ function startGame(){
   beginGameTurn();
 }
 
+function firstComboWith3S(hand){var s3=hand.find(function(c){return c.num==='3'&&c.suit==='♠';});if(!s3)return null;var same3=hand.filter(function(c){return c.num==='3';});if(same3.length>=2)return same3;return [s3];}
 function beginGameTurn(){
-  const first=players.findIndex(p=>p.hand.some(c=>c.num==='3'&&c.suit==='♣'));
+  const first=players.findIndex(p=>p.hand.some(c=>c.num==='3'&&c.suit==='♠'));
   currentPlayer=first===-1?0:first;
   renderRankBar();
   renderPointsBoard();
   render();
-  if(currentPlayer!==0) setTimeout(cpuTurn,600);
+  var _c=firstComboWith3S(players[currentPlayer].hand);
+  if(_c){
+    if(currentPlayer===0){
+      var _idx=players[0].hand.findIndex(function(c){return c.num==='3'&&c.suit==='♠';});
+      if(_idx>=0){selectedIdx=[_idx];render();}
+    } else {
+      setTimeout(function(){doPlay(currentPlayer,_c);},700);
+    }
+  } else if(currentPlayer!==0){setTimeout(cpuTurn,600);}
 }
 
 // 「次のゲーム」を押したとき: 5ゲーム終了なら優勝発表、そうでなければ続ける
